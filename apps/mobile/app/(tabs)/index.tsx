@@ -19,6 +19,9 @@ export default function HomeTabScreen() {
   const summary = getInventorySummary(items);
   const todayTasks = buildInventoryTasks(items);
   const prioritizedItems = [...activeItems].sort((left, right) => getExpirePriority(left) - getExpirePriority(right)).slice(0, 3);
+  const recentItems = [...items]
+    .sort((left, right) => new Date(right.createdAt ?? 0).getTime() - new Date(left.createdAt ?? 0).getTime())
+    .slice(0, 3);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const syncText = formatLastSyncedAt(lastSyncedAt);
 
@@ -50,6 +53,14 @@ export default function HomeTabScreen() {
           <Text style={styles.title}>今天优先吃</Text>
           <Text style={styles.description}>把最容易忘记的食物放到首页，先处理临期和剩菜。</Text>
           <Text style={styles.syncText}>{syncText}</Text>
+          <View style={styles.quickActions}>
+            <Pressable onPress={() => router.push('/leftover')} style={styles.primaryAction}>
+              <Text style={styles.primaryActionText}>记录剩菜</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/(tabs)/inventory')} style={styles.secondaryAction}>
+              <Text style={styles.secondaryActionText}>查看库存</Text>
+            </Pressable>
+          </View>
         </View>
 
         {error ? (
@@ -130,6 +141,25 @@ export default function HomeTabScreen() {
             ))
           )}
         </SectionCard>
+
+        <SectionCard>
+          <Text style={styles.sectionTitle}>最近新增</Text>
+          {isLoading ? (
+            <Text style={styles.itemMeta}>正在加载库存数据...</Text>
+          ) : recentItems.length === 0 ? (
+            <Text style={styles.itemMeta}>还没有新增物品，去库存页或剩菜快捷入口试试。</Text>
+          ) : (
+            recentItems.map((item) => (
+              <Pressable key={item.id} onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })} style={styles.itemRow}>
+                <View>
+                  <Text style={styles.itemName}>{item.name}</Text>
+                  <Text style={styles.itemMeta}>{item.note ?? item.category}</Text>
+                </View>
+                <Text style={styles.expireText}>{item.expireAt ?? '未设置'}</Text>
+              </Pressable>
+            ))
+          )}
+        </SectionCard>
       </ScrollView>
     </ScreenContainer>
   );
@@ -156,6 +186,34 @@ const styles = StyleSheet.create({
   syncText: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  primaryAction: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+  },
+  primaryActionText: {
+    fontSize: 14,
+    color: colors.surface,
+    fontWeight: '700',
+  },
+  secondaryAction: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  secondaryActionText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '700',
   },
   sectionHeader: {
     flexDirection: 'row',

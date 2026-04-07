@@ -3,7 +3,7 @@ import { isValidObjectId } from 'mongoose';
 import { connectToDatabase } from '@/src/lib/db';
 import { formatExpireLabel, parseExpiresOnInput } from '@/src/lib/item-date';
 import { ItemModel } from '@/src/models/Item';
-import { ItemCategory, ItemStatus, UpdateItemInput } from '@/src/types/item';
+import { ItemCategory, ItemStatus, StorageSpace, UpdateItemInput } from '@/src/types/item';
 
 const validCategories: ItemCategory[] = [
   'ingredient',
@@ -17,11 +17,13 @@ const validCategories: ItemCategory[] = [
 ];
 
 const validStatuses: ItemStatus[] = ['active', 'expired', 'eaten', 'discarded'];
+const validStorageSpaces: StorageSpace[] = ['chilled', 'frozen', 'room_temp', 'other'];
 
 function serializeItem(item: {
   _id: unknown;
   name: string;
   category: ItemCategory;
+  storageSpace?: StorageSpace | null;
   status: string;
   expireAt?: string | null;
   expiresOn?: Date | null;
@@ -35,6 +37,7 @@ function serializeItem(item: {
     id: String(item._id),
     name: item.name,
     category: item.category,
+    storageSpace: item.storageSpace ?? undefined,
     status: item.status,
     expireAt: formatExpireLabel(item.expiresOn) ?? item.expireAt ?? undefined,
     expiresOn: item.expiresOn?.toISOString(),
@@ -64,6 +67,10 @@ export async function PATCH(
     return NextResponse.json({ message: 'category is invalid' }, { status: 400 });
   }
 
+  if (body.storageSpace !== undefined && !validStorageSpaces.includes(body.storageSpace)) {
+    return NextResponse.json({ message: 'storageSpace is invalid' }, { status: 400 });
+  }
+
   if (body.status !== undefined && !validStatuses.includes(body.status)) {
     return NextResponse.json({ message: 'status is invalid' }, { status: 400 });
   }
@@ -85,6 +92,7 @@ export async function PATCH(
     {
       ...(body.name !== undefined ? { name: body.name.trim() } : null),
       ...(body.category !== undefined ? { category: body.category } : null),
+      ...(body.storageSpace !== undefined ? { storageSpace: body.storageSpace } : null),
       ...(body.status !== undefined ? { status: body.status } : null),
       ...(body.expireAt !== undefined ? { expireAt: body.expireAt.trim() || undefined } : null),
       ...(body.expiresOn !== undefined

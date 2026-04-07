@@ -12,6 +12,10 @@ const itemSchema = new Schema(
       required: true,
       enum: ['ingredient', 'fruit', 'drink', 'dessert', 'snack', 'leftover', 'prepared', 'other'],
     },
+    storageSpace: {
+      type: String,
+      enum: ['chilled', 'frozen', 'room_temp', 'other'],
+    },
     status: {
       type: String,
       required: true,

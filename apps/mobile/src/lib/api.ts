@@ -59,6 +59,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
 export interface CreateInventoryItemPayload {
   name: string;
   category: FridgeItem['category'];
+  storageSpace?: FridgeItem['storageSpace'];
   expireAt?: string;
   expiresOn?: string;
   quantity?: number;
@@ -70,6 +71,7 @@ export interface UpdateInventoryItemPayload {
   name?: string;
   category?: FridgeItem['category'];
   status?: FridgeItem['status'];
+  storageSpace?: FridgeItem['storageSpace'];
   expireAt?: string;
   expiresOn?: string;
   quantity?: number;
@@ -77,13 +79,19 @@ export interface UpdateInventoryItemPayload {
   note?: string;
 }
 
+export interface NoticeReadStateResponse {
+  noticeReadState: Record<string, boolean>;
+}
+
 let inventoryMockDb: FridgeItem[] = [...fridgeItems];
+let noticeReadStateMockDb: Record<string, boolean> = {};
 
 function createMockInventoryItem(payload: CreateInventoryItemPayload): FridgeItem {
   return {
     id: `${Date.now()}`,
     name: payload.name.trim(),
     category: payload.category,
+    storageSpace: payload.storageSpace,
     status: 'active',
     expireAt: formatExpireLabel(payload.expiresOn, payload.expireAt?.trim() || undefined),
     expiresOn: payload.expiresOn,
@@ -133,6 +141,7 @@ export const inventoryApi = {
         ...currentItem,
         name: payload.name?.trim() ?? currentItem.name,
         category: payload.category ?? currentItem.category,
+        storageSpace: payload.storageSpace !== undefined ? payload.storageSpace : currentItem.storageSpace,
         status: payload.status ?? currentItem.status,
         expiresOn: payload.expiresOn !== undefined ? payload.expiresOn || undefined : currentItem.expiresOn,
         expireAt:
@@ -153,5 +162,33 @@ export const inventoryApi = {
     }
 
     return apiPatch<FridgeItem>(`/api/items/${id}`, payload);
+  },
+};
+
+export const noticeReadApi = {
+  async list(): Promise<Record<string, boolean>> {
+    if (USE_INVENTORY_MOCK) {
+      return Promise.resolve({ ...noticeReadStateMockDb });
+    }
+
+    const response = await apiGet<NoticeReadStateResponse>('/api/notices/read-state');
+    return response.noticeReadState;
+  },
+
+  async markAsRead(noticeIds: string[]): Promise<Record<string, boolean>> {
+    if (USE_INVENTORY_MOCK) {
+      noticeReadStateMockDb = noticeIds.reduce<Record<string, boolean>>(
+        (result, noticeId) => ({
+          ...result,
+          [noticeId]: true,
+        }),
+        { ...noticeReadStateMockDb }
+      );
+
+      return Promise.resolve({ ...noticeReadStateMockDb });
+    }
+
+    const response = await apiPost<NoticeReadStateResponse>('/api/notices/read-state', { noticeIds });
+    return response.noticeReadState;
   },
 };

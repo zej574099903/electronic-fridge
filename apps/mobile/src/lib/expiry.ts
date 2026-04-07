@@ -3,6 +3,7 @@ import { FridgeItem } from '@/src/types/item';
 export interface InventoryNotice {
   id: string;
   itemId: string;
+  isRead?: boolean;
   type: '临期提醒' | '过期提醒' | '剩菜提醒';
   title: string;
   time: string;
@@ -53,6 +54,26 @@ export function formatExpireLabel(expiresOn?: string, fallback?: string) {
   }
 
   return `${diffDays} 天后`;
+}
+
+export function formatStorageSpaceLabel(value?: FridgeItem['storageSpace']) {
+  if (value === 'chilled') {
+    return '冷藏';
+  }
+
+  if (value === 'frozen') {
+    return '冷冻';
+  }
+
+  if (value === 'room_temp') {
+    return '常温';
+  }
+
+  if (value === 'other') {
+    return '其他';
+  }
+
+  return '未设置位置';
 }
 
 export function getExpirePriority(item: FridgeItem) {

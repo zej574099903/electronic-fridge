@@ -1,14 +1,19 @@
 import { create } from 'zustand';
-import { inventoryApi, UpdateInventoryItemPayload } from '@/src/lib/api';
+import { inventoryApi, noticeReadApi, UpdateInventoryItemPayload } from '@/src/lib/api';
 import { getExpirePriority, isUrgentItem } from '@/src/lib/expiry';
-import { FridgeItem, ItemCategory, ItemStatus } from '@/src/types/item';
+import { FridgeItem, ItemCategory, ItemStatus, StorageSpace } from '@/src/types/item';
 
 export type InventoryStatusScope = 'active_only' | 'processed_only' | 'all';
 export type InventorySortOption = 'expire_at' | 'created_at' | 'updated_at';
 
+export interface NoticeReadState {
+  [noticeId: string]: boolean;
+}
+
 export interface CreateFridgeItemInput {
   name: string;
   category: ItemCategory;
+  storageSpace?: StorageSpace;
   expiresOn?: string;
   quantity?: number;
   quantityUnit?: string;
@@ -38,6 +43,14 @@ export const inventoryStatusOptions: Array<{ label: string; value: ItemStatus | 
   { label: '已过期', value: 'expired' },
 ];
 
+export const inventoryStorageSpaceOptions: Array<{ label: string; value: StorageSpace | 'all' }> = [
+  { label: '全部位置', value: 'all' },
+  { label: '冷藏', value: 'chilled' },
+  { label: '冷冻', value: 'frozen' },
+  { label: '常温', value: 'room_temp' },
+  { label: '其他', value: 'other' },
+];
+
 export const inventorySortOptions: Array<{ label: string; value: InventorySortOption }> = [
   { label: '按到期时间', value: 'expire_at' },
   { label: '按创建时间', value: 'created_at' },
@@ -53,10 +66,13 @@ interface InventoryState {
   lastSyncedAt: string | null;
   searchQuery: string;
   selectedCategory: ItemCategory | 'all';
+  selectedStorageSpace: StorageSpace | 'all';
   statusScope: InventoryStatusScope;
   selectedStatus: ItemStatus | 'all';
   sortBy: InventorySortOption;
+  noticeReadState: NoticeReadState;
   fetchItems: () => Promise<void>;
+  fetchNoticeReadState: () => Promise<void>;
   addItem: (item: CreateFridgeItemInput) => Promise<void>;
   updateItem: (id: string, item: UpdateInventoryItemPayload) => Promise<void>;
   updateItemStatus: (id: string, status: ItemStatus) => Promise<void>;
@@ -64,9 +80,12 @@ interface InventoryState {
   clearError: () => void;
   setSearchQuery: (query: string) => void;
   setSelectedCategory: (category: ItemCategory | 'all') => void;
+  setSelectedStorageSpace: (storageSpace: StorageSpace | 'all') => void;
   setStatusScope: (scope: InventoryStatusScope) => void;
   setSelectedStatus: (status: ItemStatus | 'all') => void;
   setSortBy: (sortBy: InventorySortOption) => void;
+  markNoticeAsRead: (noticeId: string) => void;
+  markAllNoticesAsRead: (noticeIds: string[]) => void;
   resetFilters: () => void;
 }
 
@@ -79,18 +98,22 @@ export const useInventoryStore = create<InventoryState>((set) => ({
   lastSyncedAt: null,
   searchQuery: '',
   selectedCategory: 'all',
+  selectedStorageSpace: 'all',
   statusScope: 'all',
   selectedStatus: 'all',
   sortBy: 'expire_at',
+  noticeReadState: {},
   fetchItems: async () => {
     set({ isLoading: true, error: null });
 
     try {
       const items = await inventoryApi.list();
+      const noticeReadState = await noticeReadApi.list();
       set({
         items,
         initialized: true,
         isLoading: false,
+        noticeReadState,
         lastSyncedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -99,6 +122,14 @@ export const useInventoryStore = create<InventoryState>((set) => ({
         initialized: true,
         isLoading: false,
       });
+    }
+  },
+  fetchNoticeReadState: async () => {
+    try {
+      const noticeReadState = await noticeReadApi.list();
+      set({ noticeReadState });
+    } catch {
+      return;
     }
   },
   addItem: async (item) => {
@@ -172,22 +203,69 @@ export const useInventoryStore = create<InventoryState>((set) => ({
   clearError: () => set({ error: null }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSelectedCategory: (category) => set({ selectedCategory: category }),
+  setSelectedStorageSpace: (storageSpace) => set({ selectedStorageSpace: storageSpace }),
   setStatusScope: (scope) => set({ statusScope: scope }),
   setSelectedStatus: (status) => set({ selectedStatus: status }),
   setSortBy: (sortBy) => set({ sortBy }),
+  markNoticeAsRead: (noticeId) => {
+    set((state) => ({
+      noticeReadState: {
+        ...state.noticeReadState,
+        [noticeId]: true,
+      },
+    }));
+
+    void noticeReadApi.markAsRead([noticeId]).then((noticeReadState) => {
+      set((state) => ({
+        noticeReadState: {
+          ...state.noticeReadState,
+          ...noticeReadState,
+        },
+      }));
+    });
+  },
+  markAllNoticesAsRead: (noticeIds) => {
+    set((state) => ({
+      noticeReadState: noticeIds.reduce<NoticeReadState>(
+        (result, noticeId) => ({
+          ...result,
+          [noticeId]: true,
+        }),
+        { ...state.noticeReadState }
+      ),
+    }));
+
+    void noticeReadApi.markAsRead(noticeIds).then((noticeReadState) => {
+      set((state) => ({
+        noticeReadState: {
+          ...state.noticeReadState,
+          ...noticeReadState,
+        },
+      }));
+    });
+  },
   resetFilters: () =>
-    set({ searchQuery: '', selectedCategory: 'all', statusScope: 'all', selectedStatus: 'all', sortBy: 'expire_at' }),
+    set({
+      searchQuery: '',
+      selectedCategory: 'all',
+      selectedStorageSpace: 'all',
+      statusScope: 'all',
+      selectedStatus: 'all',
+      sortBy: 'expire_at',
+    }),
 }));
 
 export function filterInventoryItems(
   items: FridgeItem[],
   searchQuery: string,
   selectedCategory: ItemCategory | 'all',
+  selectedStorageSpace: StorageSpace | 'all',
   statusScope: InventoryStatusScope,
   selectedStatus: ItemStatus | 'all'
 ) {
   return items.filter((item) => {
     const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
+    const matchesStorageSpace = selectedStorageSpace === 'all' || item.storageSpace === selectedStorageSpace;
     const matchesScope =
       statusScope === 'all' ||
       (statusScope === 'active_only' && item.status === 'active') ||
@@ -199,7 +277,7 @@ export function filterInventoryItems(
       item.name.toLowerCase().includes(keyword) ||
       item.note?.toLowerCase().includes(keyword);
 
-    return matchesCategory && matchesScope && matchesStatus && matchesSearch;
+    return matchesCategory && matchesStorageSpace && matchesScope && matchesStatus && matchesSearch;
   });
 }
 

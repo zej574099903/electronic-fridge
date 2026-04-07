@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ScreenContainer } from '@/src/components/ScreenContainer';
@@ -7,18 +7,49 @@ import { colors } from '@/src/constants/colors';
 import { buildInventoryNotices } from '@/src/lib/expiry';
 import { useInventoryStore } from '@/src/store/useInventoryStore';
 
+type NoticeFilter = 'all' | 'unread' | 'read';
+
+const noticeFilterOptions: Array<{ label: string; value: NoticeFilter }> = [
+  { label: '全部', value: 'all' },
+  { label: '未读', value: 'unread' },
+  { label: '已读', value: 'read' },
+];
+
 export default function NotificationsTabScreen() {
+  const [selectedFilter, setSelectedFilter] = useState<NoticeFilter>('all');
   const items = useInventoryStore((state) => state.items);
   const initialized = useInventoryStore((state) => state.initialized);
   const isLoading = useInventoryStore((state) => state.isLoading);
+  const noticeReadState = useInventoryStore((state) => state.noticeReadState);
   const fetchItems = useInventoryStore((state) => state.fetchItems);
-  const notices = buildInventoryNotices(items);
+  const fetchNoticeReadState = useInventoryStore((state) => state.fetchNoticeReadState);
+  const markNoticeAsRead = useInventoryStore((state) => state.markNoticeAsRead);
+  const markAllNoticesAsRead = useInventoryStore((state) => state.markAllNoticesAsRead);
+  const notices = buildInventoryNotices(items).map((notice) => ({
+    ...notice,
+    isRead: Boolean(noticeReadState[notice.id]),
+  }));
+  const unreadCount = notices.filter((notice) => !notice.isRead).length;
+  const filteredNotices = useMemo(() => {
+    if (selectedFilter === 'unread') {
+      return notices.filter((notice) => !notice.isRead);
+    }
+
+    if (selectedFilter === 'read') {
+      return notices.filter((notice) => notice.isRead);
+    }
+
+    return notices;
+  }, [notices, selectedFilter]);
 
   useEffect(() => {
     if (!initialized) {
       void fetchItems();
+      return;
     }
-  }, [fetchItems, initialized]);
+
+    void fetchNoticeReadState();
+  }, [fetchItems, fetchNoticeReadState, initialized]);
 
   return (
     <ScreenContainer>
@@ -26,20 +57,57 @@ export default function NotificationsTabScreen() {
         <View style={styles.hero}>
           <Text style={styles.title}>提醒</Text>
           <Text style={styles.description}>这里集中处理临期提醒、剩菜提醒和每日库存关注项。</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{notices.length}</Text>
+              <Text style={styles.statLabel}>全部提醒</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{unreadCount}</Text>
+              <Text style={styles.statLabel}>未读提醒</Text>
+            </View>
+          </View>
         </View>
 
         <SectionCard>
-          <Text style={styles.sectionTitle}>今日提醒</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>今日提醒</Text>
+            {unreadCount > 0 ? (
+              <Pressable onPress={() => markAllNoticesAsRead(notices.filter((notice) => !notice.isRead).map((notice) => notice.id))}>
+                <Text style={styles.markAllText}>全部标为已读</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+            {noticeFilterOptions.map((option) => {
+              const active = option.value === selectedFilter;
+
+              return (
+                <Pressable
+                  key={option.value}
+                  onPress={() => setSelectedFilter(option.value)}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                >
+                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
           {isLoading && !initialized ? (
             <Text style={styles.emptyText}>正在生成提醒...</Text>
           ) : notices.length === 0 ? (
             <Text style={styles.emptyText}>当前没有新的临期或剩菜提醒。</Text>
+          ) : filteredNotices.length === 0 ? (
+            <Text style={styles.emptyText}>当前筛选条件下没有匹配的提醒。</Text>
           ) : (
-            notices.map((notice) => (
+            filteredNotices.map((notice) => (
               <Pressable
                 key={notice.id}
-                onPress={() => router.push({ pathname: '/(tabs)/inventory', params: { itemId: notice.itemId } })}
-                style={styles.noticeRow}
+                onPress={() => {
+                  markNoticeAsRead(notice.id);
+                  router.push({ pathname: '/(tabs)/inventory', params: { itemId: notice.itemId } });
+                }}
+                style={[styles.noticeRow, notice.isRead && styles.noticeRowRead]}
               >
                 <View style={[styles.noticeBadge, styles[notice.tone]]} />
                 <View style={styles.noticeContent}>
@@ -74,15 +142,73 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 22,
   },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: colors.background,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    gap: 4,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  statLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: colors.textPrimary,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  markAllText: {
+    fontSize: 13,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  filterRow: {
+    gap: 10,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  filterChipText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  filterChipTextActive: {
+    color: colors.surface,
+  },
   noticeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  noticeRowRead: {
+    opacity: 0.55,
   },
   noticeBadge: {
     width: 10,

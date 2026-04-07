@@ -1,22 +1,24 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useLocalSearchParams } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ScreenContainer } from '@/src/components/ScreenContainer';
 import { SectionCard } from '@/src/components/SectionCard';
 import { colors } from '@/src/constants/colors';
+import { formatStorageSpaceLabel } from '@/src/lib/expiry';
 import {
   CreateFridgeItemInput,
   formatLastSyncedAt,
   filterInventoryItems,
   getInventorySummary,
   inventoryCategoryOptions,
+  inventoryStorageSpaceOptions,
   inventorySortOptions,
   inventoryStatusOptions,
   inventoryStatusScopeOptions,
   sortInventoryItems,
   useInventoryStore,
 } from '@/src/store/useInventoryStore';
-import { ItemCategory, ItemStatus } from '@/src/types/item';
+import { ItemCategory, ItemStatus, StorageSpace } from '@/src/types/item';
 
 const quickAddCategoryOptions: Array<{ label: string; value: ItemCategory }> = [
   { label: '食材', value: 'ingredient' },
@@ -24,6 +26,13 @@ const quickAddCategoryOptions: Array<{ label: string; value: ItemCategory }> = [
   { label: '甜品', value: 'dessert' },
   { label: '零食', value: 'snack' },
   { label: '剩菜', value: 'leftover' },
+  { label: '其他', value: 'other' },
+];
+
+const quickAddStorageOptions: Array<{ label: string; value: StorageSpace }> = [
+  { label: '冷藏', value: 'chilled' },
+  { label: '冷冻', value: 'frozen' },
+  { label: '常温', value: 'room_temp' },
   { label: '其他', value: 'other' },
 ];
 
@@ -36,6 +45,8 @@ const statusLabelMap: Record<ItemStatus, string> = {
 
 export default function InventoryTabScreen() {
   const params = useLocalSearchParams<{ itemId?: string }>();
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const itemPositionsRef = useRef<Record<string, number>>({});
   const items = useInventoryStore((state) => state.items);
   const initialized = useInventoryStore((state) => state.initialized);
   const isLoading = useInventoryStore((state) => state.isLoading);
@@ -44,6 +55,7 @@ export default function InventoryTabScreen() {
   const lastSyncedAt = useInventoryStore((state) => state.lastSyncedAt);
   const searchQuery = useInventoryStore((state) => state.searchQuery);
   const selectedCategory = useInventoryStore((state) => state.selectedCategory);
+  const selectedStorageSpace = useInventoryStore((state) => state.selectedStorageSpace);
   const statusScope = useInventoryStore((state) => state.statusScope);
   const selectedStatus = useInventoryStore((state) => state.selectedStatus);
   const sortBy = useInventoryStore((state) => state.sortBy);
@@ -55,6 +67,7 @@ export default function InventoryTabScreen() {
   const clearError = useInventoryStore((state) => state.clearError);
   const setSearchQuery = useInventoryStore((state) => state.setSearchQuery);
   const setSelectedCategory = useInventoryStore((state) => state.setSelectedCategory);
+  const setSelectedStorageSpace = useInventoryStore((state) => state.setSelectedStorageSpace);
   const setStatusScope = useInventoryStore((state) => state.setStatusScope);
   const setSelectedStatus = useInventoryStore((state) => state.setSelectedStatus);
   const setSortBy = useInventoryStore((state) => state.setSortBy);
@@ -62,6 +75,7 @@ export default function InventoryTabScreen() {
   const [draft, setDraft] = useState<CreateFridgeItemInput>({
     name: '',
     category: 'ingredient',
+    storageSpace: 'chilled',
     expiresOn: '',
     quantity: undefined,
     quantityUnit: '',
@@ -74,6 +88,7 @@ export default function InventoryTabScreen() {
   const [editDraft, setEditDraft] = useState<CreateFridgeItemInput>({
     name: '',
     category: 'ingredient',
+    storageSpace: 'chilled',
     expiresOn: '',
     quantity: undefined,
     quantityUnit: '',
@@ -84,7 +99,7 @@ export default function InventoryTabScreen() {
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
 
   const filteredItems = sortInventoryItems(
-    filterInventoryItems(items, searchQuery, selectedCategory, statusScope, selectedStatus),
+    filterInventoryItems(items, searchQuery, selectedCategory, selectedStorageSpace, statusScope, selectedStatus),
     sortBy
   );
   const summary = getInventorySummary(items);
@@ -115,10 +130,28 @@ export default function InventoryTabScreen() {
 
     setSearchQuery(targetItem.name);
     setSelectedCategory('all');
+    setSelectedStorageSpace('all');
     setStatusScope('all');
     setSelectedStatus('all');
     setHighlightedItemId(targetItem.id);
-  }, [items, params.itemId, setSearchQuery, setSelectedCategory, setSelectedStatus, setStatusScope]);
+  }, [items, params.itemId, setSearchQuery, setSelectedCategory, setSelectedStatus, setSelectedStorageSpace, setStatusScope]);
+
+  useEffect(() => {
+    if (!highlightedItemId) {
+      return;
+    }
+
+    const position = itemPositionsRef.current[highlightedItemId];
+
+    if (position === undefined) {
+      return;
+    }
+
+    scrollViewRef.current?.scrollTo({
+      y: Math.max(position - 140, 0),
+      animated: true,
+    });
+  }, [filteredItems, highlightedItemId]);
 
   function handleStatusUpdate(id: string, name: string, status: ItemStatus) {
     const actionText = statusLabelMap[status];
@@ -190,6 +223,7 @@ export default function InventoryTabScreen() {
     setDraft({
       name: '',
       category: 'ingredient',
+      storageSpace: 'chilled',
       expiresOn: '',
       quantity: undefined,
       quantityUnit: '',
@@ -204,6 +238,7 @@ export default function InventoryTabScreen() {
     setEditDraft({
       name: item.name,
       category: item.category,
+      storageSpace: item.storageSpace ?? 'chilled',
       expiresOn: item.expiresOn ? item.expiresOn.slice(0, 10) : '',
       quantity: item.quantity,
       quantityUnit: item.quantityUnit ?? '',
@@ -246,6 +281,7 @@ export default function InventoryTabScreen() {
       await updateItem(editingItemId, {
         name: editDraft.name,
         category: editDraft.category,
+        storageSpace: editDraft.storageSpace,
         expiresOn: editDraft.expiresOn,
         quantity: editDraft.quantity && editDraft.quantity > 0 ? editDraft.quantity : undefined,
         quantityUnit: editDraft.quantityUnit,
@@ -283,6 +319,7 @@ export default function InventoryTabScreen() {
   return (
     <ScreenContainer>
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />}
@@ -344,6 +381,21 @@ export default function InventoryTabScreen() {
                   <Pressable
                     key={option.value}
                     onPress={() => updateDraft('category', option.value)}
+                    style={[styles.filterChip, active && styles.filterChipActive]}
+                  >
+                    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              {quickAddStorageOptions.map((option) => {
+                const active = option.value === draft.storageSpace;
+
+                return (
+                  <Pressable
+                    key={`draft-space-${option.value}`}
+                    onPress={() => updateDraft('storageSpace', option.value)}
                     style={[styles.filterChip, active && styles.filterChipActive]}
                   >
                     <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
@@ -456,6 +508,21 @@ export default function InventoryTabScreen() {
             })}
           </ScrollView>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+            {inventoryStorageSpaceOptions.map((option) => {
+              const active = option.value === selectedStorageSpace;
+
+              return (
+                <Pressable
+                  key={`space-${option.value}`}
+                  onPress={() => setSelectedStorageSpace(option.value)}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                >
+                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
             {inventoryStatusOptions.map((option) => {
               const active = option.value === selectedStatus;
 
@@ -500,12 +567,21 @@ export default function InventoryTabScreen() {
             </View>
           ) : (
             filteredItems.map((item) => (
-              <View key={item.id} style={[styles.itemCard, highlightedItemId === item.id && styles.highlightedItemCard]}>
+              <View
+                key={item.id}
+                onLayout={(event) => {
+                  itemPositionsRef.current[item.id] = event.nativeEvent.layout.y;
+                }}
+                style={[styles.itemCard, highlightedItemId === item.id && styles.highlightedItemCard]}
+              >
                 <View style={styles.itemRow}>
                   <View style={styles.itemMain}>
-                    <Text style={styles.itemName}>{item.name}</Text>
+                    <Pressable onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}>
+                      <Text style={styles.itemName}>{item.name}</Text>
+                    </Pressable>
                     <Text style={styles.itemMeta}>
-                      {item.category} · {item.quantity ?? 0}{item.quantityUnit ?? ''}
+                      {item.category} · {formatStorageSpaceLabel(item.storageSpace)} · {item.quantity ?? 0}
+                      {item.quantityUnit ?? ''}
                     </Text>
                     <Text style={[styles.statusText, styles[`${item.status}Status`]]}>{statusLabelMap[item.status]}</Text>
                   </View>
@@ -559,6 +635,21 @@ export default function InventoryTabScreen() {
                           <Pressable
                             key={`edit-${option.value}`}
                             onPress={() => updateEditDraft('category', option.value)}
+                            style={[styles.filterChip, active && styles.filterChipActive]}
+                          >
+                            <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+                      {quickAddStorageOptions.map((option) => {
+                        const active = option.value === editDraft.storageSpace;
+
+                        return (
+                          <Pressable
+                            key={`edit-space-${option.value}`}
+                            onPress={() => updateEditDraft('storageSpace', option.value)}
                             style={[styles.filterChip, active && styles.filterChipActive]}
                           >
                             <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>

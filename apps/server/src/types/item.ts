@@ -10,11 +10,14 @@ export type ItemCategory =
 
 export type ItemStatus = 'active' | 'expired' | 'eaten' | 'discarded';
 
+export type StorageSpace = 'chilled' | 'frozen' | 'room_temp' | 'other';
+
 export interface FridgeItem {
   id: string;
   name: string;
   category: ItemCategory;
   status: ItemStatus;
+  storageSpace?: StorageSpace;
   expireAt?: string;
   expiresOn?: string;
   quantity?: number;
@@ -27,6 +30,7 @@ export interface FridgeItem {
 export interface CreateItemInput {
   name: string;
   category: ItemCategory;
+  storageSpace?: StorageSpace;
   expireAt?: string;
   expiresOn?: string;
   quantity?: number;
@@ -38,6 +42,7 @@ export interface UpdateItemInput {
   name?: string;
   category?: ItemCategory;
   status?: ItemStatus;
+  storageSpace?: StorageSpace;
   expireAt?: string;
   expiresOn?: string;
   quantity?: number;

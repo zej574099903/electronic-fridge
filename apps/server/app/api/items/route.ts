@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/src/lib/db';
 import { formatExpireLabel, parseExpiresOnInput } from '@/src/lib/item-date';
 import { ItemModel } from '@/src/models/Item';
-import { CreateItemInput, ItemCategory } from '@/src/types/item';
+import { CreateItemInput, ItemCategory, StorageSpace } from '@/src/types/item';
 
 interface ItemRecord {
   _id: unknown;
   name: string;
   category: ItemCategory;
+  storageSpace?: StorageSpace;
   status: string;
   expireAt?: string | null;
   expiresOn?: Date | null;
@@ -29,6 +30,8 @@ const validCategories: ItemCategory[] = [
   'other',
 ];
 
+const validStorageSpaces: StorageSpace[] = ['chilled', 'frozen', 'room_temp', 'other'];
+
 export async function GET() {
   await connectToDatabase();
 
@@ -39,6 +42,7 @@ export async function GET() {
       id: String(item._id),
       name: item.name,
       category: item.category,
+      storageSpace: item.storageSpace,
       status: item.status,
       expireAt: formatExpireLabel(item.expiresOn) ?? item.expireAt ?? undefined,
       expiresOn: item.expiresOn?.toISOString(),
@@ -64,6 +68,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: 'category is invalid' }, { status: 400 });
   }
 
+  if (body.storageSpace !== undefined && !validStorageSpaces.includes(body.storageSpace)) {
+    return NextResponse.json({ message: 'storageSpace is invalid' }, { status: 400 });
+  }
+
   if (body.quantity !== undefined && (!(typeof body.quantity === 'number') || body.quantity <= 0)) {
     return NextResponse.json({ message: 'quantity must be greater than 0' }, { status: 400 });
   }
@@ -77,6 +85,7 @@ export async function POST(request: NextRequest) {
   const item = await ItemModel.create({
     name: body.name.trim(),
     category: body.category,
+    storageSpace: body.storageSpace,
     status: 'active',
     expireAt: body.expireAt?.trim() || formatExpireLabel(expiresOn),
     expiresOn,
@@ -90,6 +99,7 @@ export async function POST(request: NextRequest) {
       id: String(item._id),
       name: item.name,
       category: item.category,
+      storageSpace: item.storageSpace,
       status: item.status,
       expireAt: formatExpireLabel(item.expiresOn) ?? item.expireAt ?? undefined,
       expiresOn: item.expiresOn?.toISOString(),
