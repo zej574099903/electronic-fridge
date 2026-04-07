@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "电子冰箱",
+    "slug": "electronic-fridge-mobile",
+    "scheme": "electronicfridge",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.electronicfridge.mobile"
+    },
+    "android": {
+      "package": "com.electronicfridge.mobile"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

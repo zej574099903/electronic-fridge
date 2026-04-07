@@ -1,0 +1,910 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScreenContainer } from '@/src/components/ScreenContainer';
+import { SectionCard } from '@/src/components/SectionCard';
+import { colors } from '@/src/constants/colors';
+import {
+  CreateFridgeItemInput,
+  formatLastSyncedAt,
+  filterInventoryItems,
+  getInventorySummary,
+  inventoryCategoryOptions,
+  inventorySortOptions,
+  inventoryStatusOptions,
+  inventoryStatusScopeOptions,
+  sortInventoryItems,
+  useInventoryStore,
+} from '@/src/store/useInventoryStore';
+import { ItemCategory, ItemStatus } from '@/src/types/item';
+
+const quickAddCategoryOptions: Array<{ label: string; value: ItemCategory }> = [
+  { label: '食材', value: 'ingredient' },
+  { label: '水果', value: 'fruit' },
+  { label: '甜品', value: 'dessert' },
+  { label: '零食', value: 'snack' },
+  { label: '剩菜', value: 'leftover' },
+  { label: '其他', value: 'other' },
+];
+
+const statusLabelMap: Record<ItemStatus, string> = {
+  active: '库存中',
+  eaten: '已吃掉',
+  discarded: '已丢弃',
+  expired: '已过期',
+};
+
+export default function InventoryTabScreen() {
+  const params = useLocalSearchParams<{ itemId?: string }>();
+  const items = useInventoryStore((state) => state.items);
+  const initialized = useInventoryStore((state) => state.initialized);
+  const isLoading = useInventoryStore((state) => state.isLoading);
+  const isMutating = useInventoryStore((state) => state.isMutating);
+  const error = useInventoryStore((state) => state.error);
+  const lastSyncedAt = useInventoryStore((state) => state.lastSyncedAt);
+  const searchQuery = useInventoryStore((state) => state.searchQuery);
+  const selectedCategory = useInventoryStore((state) => state.selectedCategory);
+  const statusScope = useInventoryStore((state) => state.statusScope);
+  const selectedStatus = useInventoryStore((state) => state.selectedStatus);
+  const sortBy = useInventoryStore((state) => state.sortBy);
+  const addItem = useInventoryStore((state) => state.addItem);
+  const updateItem = useInventoryStore((state) => state.updateItem);
+  const updateItemStatus = useInventoryStore((state) => state.updateItemStatus);
+  const removeItem = useInventoryStore((state) => state.removeItem);
+  const fetchItems = useInventoryStore((state) => state.fetchItems);
+  const clearError = useInventoryStore((state) => state.clearError);
+  const setSearchQuery = useInventoryStore((state) => state.setSearchQuery);
+  const setSelectedCategory = useInventoryStore((state) => state.setSelectedCategory);
+  const setStatusScope = useInventoryStore((state) => state.setStatusScope);
+  const setSelectedStatus = useInventoryStore((state) => state.setSelectedStatus);
+  const setSortBy = useInventoryStore((state) => state.setSortBy);
+  const resetFilters = useInventoryStore((state) => state.resetFilters);
+  const [draft, setDraft] = useState<CreateFridgeItemInput>({
+    name: '',
+    category: 'ingredient',
+    expiresOn: '',
+    quantity: undefined,
+    quantityUnit: '',
+    note: '',
+  });
+  const [formError, setFormError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<CreateFridgeItemInput>({
+    name: '',
+    category: 'ingredient',
+    expiresOn: '',
+    quantity: undefined,
+    quantityUnit: '',
+    note: '',
+  });
+  const [editError, setEditError] = useState('');
+  const [editSuccessMessage, setEditSuccessMessage] = useState('');
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+
+  const filteredItems = sortInventoryItems(
+    filterInventoryItems(items, searchQuery, selectedCategory, statusScope, selectedStatus),
+    sortBy
+  );
+  const summary = getInventorySummary(items);
+  const syncText = formatLastSyncedAt(lastSyncedAt);
+  const canSubmit = useMemo(() => {
+    const hasName = draft.name.trim().length > 0;
+    const quantityValid = draft.quantity === undefined || (Number.isFinite(draft.quantity) && draft.quantity > 0);
+
+    return hasName && quantityValid;
+  }, [draft.name, draft.quantity]);
+
+  useEffect(() => {
+    if (!initialized) {
+      void fetchItems();
+    }
+  }, [fetchItems, initialized]);
+
+  useEffect(() => {
+    if (!params.itemId) {
+      return;
+    }
+
+    const targetItem = items.find((item) => item.id === params.itemId);
+
+    if (!targetItem) {
+      return;
+    }
+
+    setSearchQuery(targetItem.name);
+    setSelectedCategory('all');
+    setStatusScope('all');
+    setSelectedStatus('all');
+    setHighlightedItemId(targetItem.id);
+  }, [items, params.itemId, setSearchQuery, setSelectedCategory, setSelectedStatus, setStatusScope]);
+
+  function handleStatusUpdate(id: string, name: string, status: ItemStatus) {
+    const actionText = statusLabelMap[status];
+
+    Alert.alert('更新库存状态', `确定将「${name}」标记为${actionText}吗？`, [
+      {
+        text: '取消',
+        style: 'cancel',
+      },
+      {
+        text: '确认',
+        onPress: async () => {
+          clearError();
+
+          try {
+            await updateItemStatus(id, status);
+            setEditSuccessMessage(`已更新状态：${actionText}`);
+          } catch {
+            Alert.alert('更新失败', '请稍后再试');
+          }
+        },
+      },
+    ]);
+  }
+
+  async function handleRefresh() {
+    setIsRefreshing(true);
+    clearError();
+
+    try {
+      await fetchItems();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
+  function updateDraft<K extends keyof CreateFridgeItemInput>(key: K, value: CreateFridgeItemInput[K]) {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  async function handleQuickAdd() {
+    if (!canSubmit) {
+      if (draft.name.trim().length === 0) {
+        setFormError('请先填写物品名称');
+        return;
+      }
+
+      setFormError('数量必须是大于 0 的数字');
+      return;
+    }
+
+    setFormError('');
+    clearError();
+
+    try {
+      await addItem({
+        ...draft,
+        quantity: draft.quantity && draft.quantity > 0 ? draft.quantity : undefined,
+      });
+      setSuccessMessage(`已加入库存：${draft.name.trim()}`);
+    } catch {
+      setFormError('新增失败，请稍后再试');
+      return;
+    }
+
+    setDraft({
+      name: '',
+      category: 'ingredient',
+      expiresOn: '',
+      quantity: undefined,
+      quantityUnit: '',
+      note: '',
+    });
+  }
+
+  function startEditItem(item: (typeof items)[number]) {
+    setEditingItemId(item.id);
+    setEditError('');
+    setEditSuccessMessage('');
+    setEditDraft({
+      name: item.name,
+      category: item.category,
+      expiresOn: item.expiresOn ? item.expiresOn.slice(0, 10) : '',
+      quantity: item.quantity,
+      quantityUnit: item.quantityUnit ?? '',
+      note: item.note ?? '',
+    });
+  }
+
+  function cancelEditItem() {
+    setEditingItemId(null);
+    setEditError('');
+    setEditSuccessMessage('');
+  }
+
+  function updateEditDraft<K extends keyof CreateFridgeItemInput>(key: K, value: CreateFridgeItemInput[K]) {
+    setEditDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  async function handleSaveEdit() {
+    if (!editingItemId) {
+      return;
+    }
+
+    if (editDraft.name.trim().length === 0) {
+      setEditError('请先填写物品名称');
+      return;
+    }
+
+    if (editDraft.quantity !== undefined && (!Number.isFinite(editDraft.quantity) || editDraft.quantity <= 0)) {
+      setEditError('数量必须是大于 0 的数字');
+      return;
+    }
+
+    setEditError('');
+    clearError();
+
+    try {
+      await updateItem(editingItemId, {
+        name: editDraft.name,
+        category: editDraft.category,
+        expiresOn: editDraft.expiresOn,
+        quantity: editDraft.quantity && editDraft.quantity > 0 ? editDraft.quantity : undefined,
+        quantityUnit: editDraft.quantityUnit,
+        note: editDraft.note,
+      });
+      setEditSuccessMessage('库存已更新');
+      setEditingItemId(null);
+    } catch {
+      setEditError('更新失败，请稍后再试');
+    }
+  }
+
+  function handleDeleteItem(id: string, name: string) {
+    Alert.alert('确认删除', `确定要删除「${name}」吗？`, [
+      {
+        text: '取消',
+        style: 'cancel',
+      },
+      {
+        text: '删除',
+        style: 'destructive',
+        onPress: async () => {
+          clearError();
+
+          try {
+            await removeItem(id);
+          } catch {
+            Alert.alert('删除失败', '请稍后再试');
+          }
+        },
+      },
+    ]);
+  }
+
+  return (
+    <ScreenContainer>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />}
+      >
+        <View style={styles.hero}>
+          <View style={styles.heroHeader}>
+            <Text style={styles.title}>库存</Text>
+            <Pressable
+              onPress={() => void handleRefresh()}
+              disabled={isLoading || isRefreshing}
+              style={[styles.refreshButton, (isLoading || isRefreshing) && styles.refreshButtonDisabled]}
+            >
+              <Text style={styles.refreshButtonText}>{isRefreshing ? '刷新中...' : '手动刷新'}</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.description}>查看冰箱里的食材、零食、剩菜和冷冻物，现在可以直接搜索和按分类筛选。</Text>
+          <Text style={styles.syncText}>{syncText}</Text>
+        </View>
+
+        {error ? (
+          <SectionCard>
+            <Text style={styles.errorMessage}>{error}</Text>
+            <Pressable onPress={() => void handleRefresh()} style={styles.retryButton}>
+              <Text style={styles.retryButtonText}>重新加载</Text>
+            </Pressable>
+          </SectionCard>
+        ) : null}
+
+        {isLoading ? (
+          <SectionCard>
+            <Text style={styles.emptyTitle}>库存加载中...</Text>
+            <Text style={styles.emptyDescription}>正在同步库存数据，请稍候。</Text>
+          </SectionCard>
+        ) : (
+          <SectionCard>
+            <Text style={styles.sectionTitle}>快速新增物品</Text>
+            {successMessage ? <Text style={styles.successMessage}>{successMessage}</Text> : null}
+            {formError ? <Text style={styles.errorMessage}>{formError}</Text> : null}
+            <TextInput
+              value={draft.name}
+              onChangeText={(value) => {
+                updateDraft('name', value);
+                if (formError) {
+                  setFormError('');
+                }
+                if (successMessage) {
+                  setSuccessMessage('');
+                }
+              }}
+              placeholder="例如：鸡蛋 / 草莓 / 剩米饭"
+              placeholderTextColor={colors.textSecondary}
+              style={styles.searchInput}
+            />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              {quickAddCategoryOptions.map((option) => {
+                const active = option.value === draft.category;
+
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => updateDraft('category', option.value)}
+                    style={[styles.filterChip, active && styles.filterChipActive]}
+                  >
+                    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <View style={styles.inlineInputs}>
+              <TextInput
+                value={draft.expiresOn ?? ''}
+                onChangeText={(value) => {
+                  updateDraft('expiresOn', value);
+                  if (successMessage) {
+                    setSuccessMessage('');
+                  }
+                }}
+                placeholder="到期日期，如 2026-04-09"
+                placeholderTextColor={colors.textSecondary}
+                style={[styles.searchInput, styles.flexInput]}
+              />
+              <TextInput
+                value={draft.quantity ? String(draft.quantity) : ''}
+                onChangeText={(value) => {
+                  updateDraft('quantity', value ? Number(value) : undefined);
+                  if (formError) {
+                    setFormError('');
+                  }
+                  if (successMessage) {
+                    setSuccessMessage('');
+                  }
+                }}
+                placeholder="数量"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="number-pad"
+                style={[styles.searchInput, styles.smallInput]}
+              />
+            </View>
+            <View style={styles.inlineInputs}>
+              <TextInput
+                value={draft.quantityUnit ?? ''}
+                onChangeText={(value) => {
+                  updateDraft('quantityUnit', value);
+                  if (successMessage) {
+                    setSuccessMessage('');
+                  }
+                }}
+                placeholder="单位，如 个 / 盒 / 杯"
+                placeholderTextColor={colors.textSecondary}
+                style={[styles.searchInput, styles.smallInput]}
+              />
+              <TextInput
+                value={draft.note ?? ''}
+                onChangeText={(value) => {
+                  updateDraft('note', value);
+                  if (successMessage) {
+                    setSuccessMessage('');
+                  }
+                }}
+                placeholder="备注，如 冷藏上层"
+                placeholderTextColor={colors.textSecondary}
+                style={[styles.searchInput, styles.flexInput]}
+              />
+            </View>
+            <Pressable
+              onPress={handleQuickAdd}
+              disabled={!canSubmit || isMutating}
+              style={[styles.submitButton, (!canSubmit || isMutating) && styles.submitButtonDisabled]}
+            >
+              <Text style={styles.submitButtonText}>{isMutating ? '处理中...' : '加入库存'}</Text>
+            </Pressable>
+          </SectionCard>
+        )}
+        <SectionCard>
+          <Text style={styles.sectionTitle}>搜索与筛选</Text>
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="搜索食物名称或备注"
+            placeholderTextColor={colors.textSecondary}
+            style={styles.searchInput}
+          />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+            {inventoryStatusScopeOptions.map((option) => {
+              const active = option.value === statusScope;
+
+              return (
+                <Pressable
+                  key={option.value}
+                  onPress={() => setStatusScope(option.value)}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                >
+                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+            {inventoryCategoryOptions.map((option) => {
+              const active = option.value === selectedCategory;
+
+              return (
+                <Pressable
+                  key={option.value}
+                  onPress={() => setSelectedCategory(option.value)}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                >
+                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+            {inventoryStatusOptions.map((option) => {
+              const active = option.value === selectedStatus;
+
+              return (
+                <Pressable
+                  key={`status-${option.value}`}
+                  onPress={() => setSelectedStatus(option.value)}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                >
+                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+            {inventorySortOptions.map((option) => {
+              const active = option.value === sortBy;
+
+              return (
+                <Pressable
+                  key={`sort-${option.value}`}
+                  onPress={() => setSortBy(option.value)}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                >
+                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <Pressable onPress={resetFilters} style={styles.resetButton}>
+            <Text style={styles.resetButtonText}>清空筛选</Text>
+          </Pressable>
+        </SectionCard>
+        <SectionCard>
+          <Text style={styles.sectionTitle}>当前库存</Text>
+          {editSuccessMessage ? <Text style={styles.successMessage}>{editSuccessMessage}</Text> : null}
+          <Text style={styles.resultCount}>共匹配 {filteredItems.length} 项</Text>
+          {filteredItems.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>没有匹配到库存</Text>
+              <Text style={styles.emptyDescription}>试试修改关键词，或者切回“全部”分类看看。</Text>
+            </View>
+          ) : (
+            filteredItems.map((item) => (
+              <View key={item.id} style={[styles.itemCard, highlightedItemId === item.id && styles.highlightedItemCard]}>
+                <View style={styles.itemRow}>
+                  <View style={styles.itemMain}>
+                    <Text style={styles.itemName}>{item.name}</Text>
+                    <Text style={styles.itemMeta}>
+                      {item.category} · {item.quantity ?? 0}{item.quantityUnit ?? ''}
+                    </Text>
+                    <Text style={[styles.statusText, styles[`${item.status}Status`]]}>{statusLabelMap[item.status]}</Text>
+                  </View>
+                  <View style={styles.itemRight}>
+                    <Text style={styles.expireLabel}>{item.expireAt ?? '未设置'}</Text>
+                    <Text style={styles.noteText}>{item.note ?? '暂无备注'}</Text>
+                    <View style={styles.actionRow}>
+                      <Pressable onPress={() => startEditItem(item)}>
+                        <Text style={styles.editText}>编辑</Text>
+                      </Pressable>
+                      {item.status === 'active' ? (
+                        <>
+                          <Pressable onPress={() => handleStatusUpdate(item.id, item.name, 'eaten')}>
+                            <Text style={styles.successActionText}>吃掉</Text>
+                          </Pressable>
+                          <Pressable onPress={() => handleStatusUpdate(item.id, item.name, 'discarded')}>
+                            <Text style={styles.deleteText}>丢弃</Text>
+                          </Pressable>
+                          <Pressable onPress={() => handleStatusUpdate(item.id, item.name, 'expired')}>
+                            <Text style={styles.warningActionText}>过期</Text>
+                          </Pressable>
+                        </>
+                      ) : null}
+                      <Pressable onPress={() => handleDeleteItem(item.id, item.name)}>
+                        <Text style={styles.deleteText}>删除</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+                {editingItemId === item.id ? (
+                  <View style={styles.editPanel}>
+                    <Text style={styles.sectionSubtitle}>编辑库存</Text>
+                    {editError ? <Text style={styles.errorMessage}>{editError}</Text> : null}
+                    <TextInput
+                      value={editDraft.name}
+                      onChangeText={(value) => {
+                        updateEditDraft('name', value);
+                        if (editError) {
+                          setEditError('');
+                        }
+                      }}
+                      placeholder="物品名称"
+                      placeholderTextColor={colors.textSecondary}
+                      style={styles.searchInput}
+                    />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+                      {quickAddCategoryOptions.map((option) => {
+                        const active = option.value === editDraft.category;
+
+                        return (
+                          <Pressable
+                            key={`edit-${option.value}`}
+                            onPress={() => updateEditDraft('category', option.value)}
+                            style={[styles.filterChip, active && styles.filterChipActive]}
+                          >
+                            <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                    <View style={styles.inlineInputs}>
+                      <TextInput
+                        value={editDraft.expiresOn ?? ''}
+                        onChangeText={(value) => updateEditDraft('expiresOn', value)}
+                        placeholder="到期日期，如 2026-04-09"
+                        placeholderTextColor={colors.textSecondary}
+                        style={[styles.searchInput, styles.flexInput]}
+                      />
+                      <TextInput
+                        value={editDraft.quantity ? String(editDraft.quantity) : ''}
+                        onChangeText={(value) => updateEditDraft('quantity', value ? Number(value) : undefined)}
+                        placeholder="数量"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="number-pad"
+                        style={[styles.searchInput, styles.smallInput]}
+                      />
+                    </View>
+                    <View style={styles.inlineInputs}>
+                      <TextInput
+                        value={editDraft.quantityUnit ?? ''}
+                        onChangeText={(value) => updateEditDraft('quantityUnit', value)}
+                        placeholder="单位"
+                        placeholderTextColor={colors.textSecondary}
+                        style={[styles.searchInput, styles.smallInput]}
+                      />
+                      <TextInput
+                        value={editDraft.note ?? ''}
+                        onChangeText={(value) => updateEditDraft('note', value)}
+                        placeholder="备注"
+                        placeholderTextColor={colors.textSecondary}
+                        style={[styles.searchInput, styles.flexInput]}
+                      />
+                    </View>
+                    <View style={styles.editActions}>
+                      <Pressable onPress={cancelEditItem} style={styles.secondaryButton}>
+                        <Text style={styles.secondaryButtonText}>取消</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={handleSaveEdit}
+                        disabled={isMutating}
+                        style={[styles.submitButton, styles.editSubmitButton, isMutating && styles.submitButtonDisabled]}
+                      >
+                        <Text style={styles.submitButtonText}>{isMutating ? '保存中...' : '保存修改'}</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            ))
+          )}
+        </SectionCard>
+      </ScrollView>
+    </ScreenContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: {
+    padding: 24,
+    gap: 16,
+  },
+  hero: {
+    gap: 8,
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  description: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    lineHeight: 22,
+  },
+  syncText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  sectionSubtitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  successMessage: {
+    fontSize: 14,
+    color: colors.success,
+    fontWeight: '600',
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: colors.danger,
+    fontWeight: '600',
+  },
+  inlineInputs: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  flexInput: {
+    flex: 1,
+  },
+  smallInput: {
+    width: 110,
+  },
+  searchInput: {
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  filterRow: {
+    gap: 10,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  filterChipText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  filterChipTextActive: {
+    color: colors.surface,
+  },
+  resetButton: {
+    alignSelf: 'flex-start',
+  },
+  resetButtonText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  refreshButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  refreshButtonDisabled: {
+    opacity: 0.5,
+  },
+  refreshButtonText: {
+    fontSize: 13,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+  },
+  retryButtonText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  submitButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  submitButtonDisabled: {
+    opacity: 0.45,
+  },
+  submitButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.surface,
+  },
+  quickStats: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  quickStatItem: {
+    flex: 1,
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    gap: 4,
+  },
+  quickStatValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  quickStatLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  resultCount: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 6,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 16,
+    paddingVertical: 8,
+  },
+  itemCard: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 8,
+  },
+  highlightedItemCard: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+  },
+  itemMain: {
+    flex: 1,
+    gap: 4,
+  },
+  itemRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  itemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  itemMeta: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  activeStatus: {
+    color: colors.primary,
+  },
+  eatenStatus: {
+    color: colors.success,
+  },
+  discardedStatus: {
+    color: colors.danger,
+  },
+  expiredStatus: {
+    color: colors.warning,
+  },
+  expireLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.warning,
+  },
+  noteText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  editText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  successActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.success,
+  },
+  warningActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.warning,
+  },
+  deleteText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.danger,
+  },
+  editPanel: {
+    gap: 12,
+    paddingTop: 12,
+  },
+  editActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  editSubmitButton: {
+    flex: 1,
+  },
+  secondaryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+});

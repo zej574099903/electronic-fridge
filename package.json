@@ -1,0 +1,14 @@
+{
+  "name": "electronic-fridge",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:mobile": "npm run start -w apps/mobile",
+    "dev:server": "npm run dev -w apps/server",
+    "dev:admin": "echo \"init admin next\""
+  }
+}
