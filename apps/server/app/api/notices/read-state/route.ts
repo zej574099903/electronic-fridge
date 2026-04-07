@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCurrentHousehold } from '@/src/lib/current-household';
 import { connectToDatabase } from '@/src/lib/db';
 import { NoticeReadModel } from '@/src/models/NoticeRead';
 
@@ -9,8 +10,9 @@ interface NoticeReadRecord {
 
 export async function GET() {
   await connectToDatabase();
+  const household = await getCurrentHousehold();
 
-  const records = await NoticeReadModel.find().sort({ updatedAt: -1 }).lean<NoticeReadRecord[]>();
+  const records = await NoticeReadModel.find({ householdId: household.id }).sort({ updatedAt: -1 }).lean<NoticeReadRecord[]>();
 
   return NextResponse.json({
     noticeReadState: records.reduce<Record<string, boolean>>((result, record) => {
@@ -22,6 +24,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   await connectToDatabase();
+  const household = await getCurrentHousehold();
 
   const body = (await request.json()) as { noticeIds?: string[] };
 
@@ -38,8 +41,8 @@ export async function POST(request: NextRequest) {
   await Promise.all(
     normalizedNoticeIds.map((noticeId) =>
       NoticeReadModel.findOneAndUpdate(
-        { noticeId },
-        { noticeId, readAt: new Date() },
+        { householdId: household.id, noticeId },
+        { householdId: household.id, noticeId, readAt: new Date() },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       )
     )

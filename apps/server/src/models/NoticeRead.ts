@@ -2,10 +2,15 @@ import { InferSchemaType, Model, Schema, model, models } from 'mongoose';
 
 const noticeReadSchema = new Schema(
   {
+    householdId: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+    },
     noticeId: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
     readAt: {
@@ -19,6 +24,8 @@ const noticeReadSchema = new Schema(
     versionKey: false,
   }
 );
+
+noticeReadSchema.index({ householdId: 1, noticeId: 1 }, { unique: true });
 
 export type NoticeReadDocument = InferSchemaType<typeof noticeReadSchema> & {
   _id: string;

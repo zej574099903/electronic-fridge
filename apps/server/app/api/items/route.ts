@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCurrentHousehold } from '@/src/lib/current-household';
 import { connectToDatabase } from '@/src/lib/db';
 import { formatExpireLabel, parseExpiresOnInput } from '@/src/lib/item-date';
 import { ItemModel } from '@/src/models/Item';
@@ -6,6 +7,7 @@ import { CreateItemInput, ItemCategory, StorageSpace } from '@/src/types/item';
 
 interface ItemRecord {
   _id: unknown;
+  householdId: string;
   name: string;
   category: ItemCategory;
   storageSpace?: StorageSpace;
@@ -34,12 +36,14 @@ const validStorageSpaces: StorageSpace[] = ['chilled', 'frozen', 'room_temp', 'o
 
 export async function GET() {
   await connectToDatabase();
+  const household = await getCurrentHousehold();
 
-  const items = await ItemModel.find().sort({ createdAt: -1 }).lean<ItemRecord[]>();
+  const items = await ItemModel.find({ householdId: household.id }).sort({ createdAt: -1 }).lean<ItemRecord[]>();
 
   return NextResponse.json(
     items.map((item) => ({
       id: String(item._id),
+      householdId: item.householdId,
       name: item.name,
       category: item.category,
       storageSpace: item.storageSpace,
@@ -57,6 +61,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   await connectToDatabase();
+  const household = await getCurrentHousehold();
 
   const body = (await request.json()) as Partial<CreateItemInput>;
 
@@ -83,6 +88,7 @@ export async function POST(request: NextRequest) {
   }
 
   const item = await ItemModel.create({
+    householdId: household.id,
     name: body.name.trim(),
     category: body.category,
     storageSpace: body.storageSpace,
@@ -97,6 +103,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(
     {
       id: String(item._id),
+      householdId: item.householdId,
       name: item.name,
       category: item.category,
       storageSpace: item.storageSpace,

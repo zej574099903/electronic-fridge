@@ -3,6 +3,7 @@ import { FridgeItem } from '@/src/types/item';
 export const fridgeItems: FridgeItem[] = [
   {
     id: '1',
+    householdId: 'default-household',
     name: '蓝莓酸奶',
     category: 'dessert',
     storageSpace: 'chilled',
@@ -16,6 +17,7 @@ export const fridgeItems: FridgeItem[] = [
   },
   {
     id: '2',
+    householdId: 'default-household',
     name: '西兰花',
     category: 'ingredient',
     storageSpace: 'chilled',
@@ -29,6 +31,7 @@ export const fridgeItems: FridgeItem[] = [
   },
   {
     id: '3',
+    householdId: 'default-household',
     name: '昨晚剩米饭',
     category: 'leftover',
     storageSpace: 'chilled',
@@ -42,6 +45,7 @@ export const fridgeItems: FridgeItem[] = [
   },
   {
     id: '4',
+    householdId: 'default-household',
     name: '棒冰',
     category: 'snack',
     storageSpace: 'frozen',

@@ -1,6 +1,6 @@
 import { fridgeItems } from '@/src/mocks/dashboard';
 import { formatExpireLabel } from '@/src/lib/expiry';
-import { FridgeItem } from '@/src/types/item';
+import { FridgeItem, Household, HouseholdMember } from '@/src/types/item';
 
 export const API_BASE_URL = 'http://10.30.56.27:3000';
 export const USE_INVENTORY_MOCK = false;
@@ -12,11 +12,18 @@ interface ApiRequestOptions {
   body?: unknown;
 }
 
+let currentHouseholdScopeId: string | null = null;
+
+export function setCurrentHouseholdScope(householdId: string | null) {
+  currentHouseholdScopeId = householdId;
+}
+
 async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: options.method ?? 'GET',
     headers: {
       'Content-Type': 'application/json',
+      ...(currentHouseholdScopeId ? { 'x-household-id': currentHouseholdScopeId } : null),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
@@ -83,12 +90,30 @@ export interface NoticeReadStateResponse {
   noticeReadState: Record<string, boolean>;
 }
 
+const defaultMockHousehold: Household = {
+  id: 'default-household',
+  name: '我的小厨房',
+  inviteCode: 'DEFAULT',
+};
+
 let inventoryMockDb: FridgeItem[] = [...fridgeItems];
 let noticeReadStateMockDb: Record<string, boolean> = {};
+let householdMembersMockDb: HouseholdMember[] = [
+  {
+    id: 'member-1',
+    householdId: defaultMockHousehold.id,
+    userId: 'default-user',
+    role: 'owner',
+    status: 'active',
+    nickname: '我',
+    joinedAt: new Date().toISOString(),
+  },
+];
 
 function createMockInventoryItem(payload: CreateInventoryItemPayload): FridgeItem {
   return {
     id: `${Date.now()}`,
+    householdId: defaultMockHousehold.id,
     name: payload.name.trim(),
     category: payload.category,
     storageSpace: payload.storageSpace,
@@ -162,6 +187,69 @@ export const inventoryApi = {
     }
 
     return apiPatch<FridgeItem>(`/api/items/${id}`, payload);
+  },
+};
+
+export const householdApi = {
+  async getCurrent(): Promise<Household> {
+    if (USE_INVENTORY_MOCK) {
+      return Promise.resolve(defaultMockHousehold);
+    }
+
+    return apiGet<Household>('/api/households/current');
+  },
+
+  async listMembers(): Promise<HouseholdMember[]> {
+    if (USE_INVENTORY_MOCK) {
+      return Promise.resolve([...householdMembersMockDb]);
+    }
+
+    return apiGet<HouseholdMember[]>('/api/households/members');
+  },
+
+  async create(name: string): Promise<Household> {
+    if (USE_INVENTORY_MOCK) {
+      const createdHousehold: Household = {
+        id: `${Date.now()}`,
+        name: name.trim(),
+        inviteCode: Math.random().toString(36).slice(2, 8).toUpperCase(),
+      };
+      setCurrentHouseholdScope(createdHousehold.id);
+      householdMembersMockDb = [
+        {
+          id: `member-${Date.now()}`,
+          householdId: createdHousehold.id,
+          userId: 'default-user',
+          role: 'owner',
+          status: 'active',
+          nickname: '我',
+          joinedAt: new Date().toISOString(),
+        },
+      ];
+      return Promise.resolve(createdHousehold);
+    }
+
+    return apiPost<Household>('/api/households', { name });
+  },
+
+  async join(inviteCode: string, nickname?: string): Promise<Household> {
+    if (USE_INVENTORY_MOCK) {
+      householdMembersMockDb = [
+        ...householdMembersMockDb,
+        {
+          id: `member-${Date.now()}`,
+          householdId: defaultMockHousehold.id,
+          userId: `guest-${Date.now()}`,
+          role: 'member',
+          status: 'active',
+          nickname: nickname?.trim() || '我',
+          joinedAt: new Date().toISOString(),
+        },
+      ];
+      return Promise.resolve(defaultMockHousehold);
+    }
+
+    return apiPost<Household>('/api/households/join', { inviteCode, nickname });
   },
 };
 

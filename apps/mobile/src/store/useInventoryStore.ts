@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { inventoryApi, noticeReadApi, UpdateInventoryItemPayload } from '@/src/lib/api';
+import { householdApi, inventoryApi, noticeReadApi, setCurrentHouseholdScope, UpdateInventoryItemPayload } from '@/src/lib/api';
 import { getExpirePriority, isUrgentItem } from '@/src/lib/expiry';
-import { FridgeItem, ItemCategory, ItemStatus, StorageSpace } from '@/src/types/item';
+import { FridgeItem, Household, HouseholdMember, ItemCategory, ItemStatus, StorageSpace } from '@/src/types/item';
 
 export type InventoryStatusScope = 'active_only' | 'processed_only' | 'all';
 export type InventorySortOption = 'expire_at' | 'created_at' | 'updated_at';
@@ -64,6 +64,8 @@ interface InventoryState {
   isMutating: boolean;
   error: string | null;
   lastSyncedAt: string | null;
+  currentHousehold: Household | null;
+  householdMembers: HouseholdMember[];
   searchQuery: string;
   selectedCategory: ItemCategory | 'all';
   selectedStorageSpace: StorageSpace | 'all';
@@ -73,6 +75,7 @@ interface InventoryState {
   noticeReadState: NoticeReadState;
   fetchItems: () => Promise<void>;
   fetchNoticeReadState: () => Promise<void>;
+  fetchHouseholdMembers: () => Promise<void>;
   addItem: (item: CreateFridgeItemInput) => Promise<void>;
   updateItem: (id: string, item: UpdateInventoryItemPayload) => Promise<void>;
   updateItemStatus: (id: string, status: ItemStatus) => Promise<void>;
@@ -86,6 +89,8 @@ interface InventoryState {
   setSortBy: (sortBy: InventorySortOption) => void;
   markNoticeAsRead: (noticeId: string) => void;
   markAllNoticesAsRead: (noticeIds: string[]) => void;
+  createHousehold: (name: string) => Promise<void>;
+  joinHousehold: (inviteCode: string, nickname?: string) => Promise<void>;
   resetFilters: () => void;
 }
 
@@ -96,6 +101,8 @@ export const useInventoryStore = create<InventoryState>((set) => ({
   isMutating: false,
   error: null,
   lastSyncedAt: null,
+  currentHousehold: null,
+  householdMembers: [],
   searchQuery: '',
   selectedCategory: 'all',
   selectedStorageSpace: 'all',
@@ -109,11 +116,16 @@ export const useInventoryStore = create<InventoryState>((set) => ({
     try {
       const items = await inventoryApi.list();
       const noticeReadState = await noticeReadApi.list();
+      const currentHousehold = await householdApi.getCurrent();
+      setCurrentHouseholdScope(currentHousehold.id);
+      const householdMembers = await householdApi.listMembers();
       set({
         items,
         initialized: true,
         isLoading: false,
         noticeReadState,
+        currentHousehold,
+        householdMembers,
         lastSyncedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -122,6 +134,14 @@ export const useInventoryStore = create<InventoryState>((set) => ({
         initialized: true,
         isLoading: false,
       });
+    }
+  },
+  fetchHouseholdMembers: async () => {
+    try {
+      const householdMembers = await householdApi.listMembers();
+      set({ householdMembers });
+    } catch {
+      return;
     }
   },
   fetchNoticeReadState: async () => {
@@ -243,6 +263,60 @@ export const useInventoryStore = create<InventoryState>((set) => ({
         },
       }));
     });
+  },
+  createHousehold: async (name) => {
+    set({ isMutating: true, error: null });
+
+    try {
+      const currentHousehold = await householdApi.create(name);
+      setCurrentHouseholdScope(currentHousehold.id);
+      const [items, noticeReadState, householdMembers] = await Promise.all([
+        inventoryApi.list(),
+        noticeReadApi.list(),
+        householdApi.listMembers(),
+      ]);
+      set({
+        currentHousehold,
+        items,
+        noticeReadState,
+        householdMembers,
+        isMutating: false,
+        lastSyncedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : '创建家庭失败',
+        isMutating: false,
+      });
+      throw error;
+    }
+  },
+  joinHousehold: async (inviteCode, nickname) => {
+    set({ isMutating: true, error: null });
+
+    try {
+      const currentHousehold = await householdApi.join(inviteCode, nickname);
+      setCurrentHouseholdScope(currentHousehold.id);
+      const [items, noticeReadState, householdMembers] = await Promise.all([
+        inventoryApi.list(),
+        noticeReadApi.list(),
+        householdApi.listMembers(),
+      ]);
+      set({
+        currentHousehold,
+        items,
+        noticeReadState,
+        householdMembers,
+        isMutating: false,
+        lastSyncedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : '加入家庭失败',
+        isMutating: false,
+      });
+      throw error;
+    }
   },
   resetFilters: () =>
     set({

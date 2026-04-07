@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isValidObjectId } from 'mongoose';
+import { getCurrentHousehold } from '@/src/lib/current-household';
 import { connectToDatabase } from '@/src/lib/db';
 import { formatExpireLabel, parseExpiresOnInput } from '@/src/lib/item-date';
 import { ItemModel } from '@/src/models/Item';
@@ -21,6 +22,7 @@ const validStorageSpaces: StorageSpace[] = ['chilled', 'frozen', 'room_temp', 'o
 
 function serializeItem(item: {
   _id: unknown;
+  householdId: string;
   name: string;
   category: ItemCategory;
   storageSpace?: StorageSpace | null;
@@ -35,6 +37,7 @@ function serializeItem(item: {
 }) {
   return {
     id: String(item._id),
+    householdId: item.householdId,
     name: item.name,
     category: item.category,
     storageSpace: item.storageSpace ?? undefined,
@@ -86,9 +89,10 @@ export async function PATCH(
   }
 
   await connectToDatabase();
+  const household = await getCurrentHousehold();
 
-  const updatedItem = await ItemModel.findByIdAndUpdate(
-    context.params.id,
+  const updatedItem = await ItemModel.findOneAndUpdate(
+    { _id: context.params.id, householdId: household.id },
     {
       ...(body.name !== undefined ? { name: body.name.trim() } : null),
       ...(body.category !== undefined ? { category: body.category } : null),
@@ -127,8 +131,9 @@ export async function DELETE(
   }
 
   await connectToDatabase();
+  const household = await getCurrentHousehold();
 
-  const deleted = await ItemModel.findByIdAndDelete(context.params.id);
+  const deleted = await ItemModel.findOneAndDelete({ _id: context.params.id, householdId: household.id });
 
   if (!deleted) {
     return NextResponse.json({ message: 'item not found' }, { status: 404 });

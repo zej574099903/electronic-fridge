@@ -1,8 +1,11 @@
 import { CreateItemInput, FridgeItem } from '@/src/types/item';
 
+const DEFAULT_HOUSEHOLD_ID = 'default-household';
+
 const initialItems: FridgeItem[] = [
   {
     id: '1',
+    householdId: DEFAULT_HOUSEHOLD_ID,
     name: '蓝莓酸奶',
     category: 'dessert',
     storageSpace: 'chilled',
@@ -16,6 +19,7 @@ const initialItems: FridgeItem[] = [
   },
   {
     id: '2',
+    householdId: DEFAULT_HOUSEHOLD_ID,
     name: '西兰花',
     category: 'ingredient',
     storageSpace: 'chilled',
@@ -53,6 +57,7 @@ export function createItem(input: CreateItemInput) {
   const now = new Date().toISOString();
   const item: FridgeItem = {
     id: `${Date.now()}`,
+    householdId: DEFAULT_HOUSEHOLD_ID,
     name: input.name.trim(),
     category: input.category,
     storageSpace: input.storageSpace,

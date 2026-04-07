@@ -14,6 +14,7 @@ export type StorageSpace = 'chilled' | 'frozen' | 'room_temp' | 'other';
 
 export interface FridgeItem {
   id: string;
+  householdId: string;
   name: string;
   category: ItemCategory;
   status: ItemStatus;
