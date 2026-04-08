@@ -12,8 +12,8 @@ export interface CurrentHousehold {
   inviteCode?: string;
 }
 
-export async function getCurrentHousehold() : Promise<CurrentHousehold> {
-  const requestHeaders = headers();
+export async function getCurrentHousehold(): Promise<CurrentHousehold> {
+  const requestHeaders = await headers();
   const headerHouseholdId = requestHeaders.get(HOUSEHOLD_HEADER_NAME);
 
   if (headerHouseholdId) {
