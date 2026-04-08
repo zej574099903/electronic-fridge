@@ -54,9 +54,11 @@ function serializeItem(item: {
 
 export async function PATCH(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  if (!isValidObjectId(context.params.id)) {
+  const { id } = await context.params;
+
+  if (!isValidObjectId(id)) {
     return NextResponse.json({ message: 'item not found' }, { status: 404 });
   }
 
@@ -92,7 +94,7 @@ export async function PATCH(
   const household = await getCurrentHousehold();
 
   const updatedItem = await ItemModel.findOneAndUpdate(
-    { _id: context.params.id, householdId: household.id },
+    { _id: id, householdId: household.id },
     {
       ...(body.name !== undefined ? { name: body.name.trim() } : null),
       ...(body.category !== undefined ? { category: body.category } : null),
@@ -101,9 +103,9 @@ export async function PATCH(
       ...(body.expireAt !== undefined ? { expireAt: body.expireAt.trim() || undefined } : null),
       ...(body.expiresOn !== undefined
         ? {
-            expiresOn,
-            expireAt: body.expireAt?.trim() || formatExpireLabel(expiresOn),
-          }
+          expiresOn,
+          expireAt: body.expireAt?.trim() || formatExpireLabel(expiresOn),
+        }
         : null),
       ...(body.quantity !== undefined ? { quantity: body.quantity } : null),
       ...(body.quantityUnit !== undefined ? { quantityUnit: body.quantityUnit.trim() || undefined } : null),
@@ -124,16 +126,18 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  if (!isValidObjectId(context.params.id)) {
+  const { id } = await context.params;
+
+  if (!isValidObjectId(id)) {
     return NextResponse.json({ message: 'item not found' }, { status: 404 });
   }
 
   await connectToDatabase();
   const household = await getCurrentHousehold();
 
-  const deleted = await ItemModel.findOneAndDelete({ _id: context.params.id, householdId: household.id });
+  const deleted = await ItemModel.findOneAndDelete({ _id: id, householdId: household.id });
 
   if (!deleted) {
     return NextResponse.json({ message: 'item not found' }, { status: 404 });
