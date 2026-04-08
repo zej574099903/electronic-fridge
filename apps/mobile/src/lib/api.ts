@@ -1,8 +1,13 @@
+import { Platform } from 'react-native';
 import { fridgeItems } from '@/src/mocks/dashboard';
 import { formatExpireLabel } from '@/src/lib/expiry';
 import { FridgeItem, Household, HouseholdMember } from '@/src/types/item';
+import { useAuthStore } from '@/src/store/useAuthStore';
 
-export const API_BASE_URL = 'http://10.30.56.27:3000';
+// For web development, localhost is usually preferred.
+export const API_BASE_URL = Platform.OS === 'web'
+  ? 'http://localhost:3000'
+  : 'https://arctic-fresh-server-final.loca.lt';
 export const USE_INVENTORY_MOCK = false;
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -19,10 +24,14 @@ export function setCurrentHouseholdScope(householdId: string | null) {
 }
 
 async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const token = useAuthStore.getState().token;
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: options.method ?? 'GET',
     headers: {
       'Content-Type': 'application/json',
+      'Bypass-Tunnel-Reminder': 'true', // Bypass localtunnel landing page
+      ...(token ? { 'Authorization': `Bearer ${token}` } : null),
       ...(currentHouseholdScopeId ? { 'x-household-id': currentHouseholdScopeId } : null),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -172,9 +181,9 @@ export const inventoryApi = {
         expireAt:
           payload.expiresOn !== undefined || payload.expireAt !== undefined
             ? formatExpireLabel(
-                payload.expiresOn !== undefined ? payload.expiresOn || undefined : currentItem.expiresOn,
-                payload.expireAt !== undefined ? payload.expireAt.trim() || undefined : currentItem.expireAt
-              )
+              payload.expiresOn !== undefined ? payload.expiresOn || undefined : currentItem.expiresOn,
+              payload.expireAt !== undefined ? payload.expireAt.trim() || undefined : currentItem.expireAt
+            )
             : currentItem.expireAt,
         quantity: payload.quantity !== undefined ? payload.quantity : currentItem.quantity,
         quantityUnit:
@@ -278,5 +287,15 @@ export const noticeReadApi = {
 
     const response = await apiPost<NoticeReadStateResponse>('/api/notices/read-state', { noticeIds });
     return response.noticeReadState;
+  },
+};
+
+export const authApi = {
+  async sendCode(phone: string): Promise<{ success: boolean; message: string }> {
+    return apiPost('/api/auth/send-code', { phone });
+  },
+
+  async verifyCode(phone: string, code: string): Promise<{ success: boolean; token: string; user: any }> {
+    return apiPost('/api/auth/verify-code', { phone, code });
   },
 };

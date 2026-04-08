@@ -29,3 +29,4 @@ export async function connectToDatabase() {
     throw error;
   }
 }
+export const dbConnect = connectToDatabase;
