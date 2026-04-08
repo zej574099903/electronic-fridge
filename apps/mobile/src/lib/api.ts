@@ -7,7 +7,7 @@ import { useAuthStore } from '@/src/store/useAuthStore';
 // For web development, localhost is usually preferred.
 export const API_BASE_URL = Platform.OS === 'web'
   ? 'http://localhost:3000'
-  : 'https://arctic-fresh-server-final.loca.lt';
+  : 'https://ice-server.zhouenjun.top';
 export const USE_INVENTORY_MOCK = false;
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -26,26 +26,40 @@ export function setCurrentHouseholdScope(householdId: string | null) {
 async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const token = useAuthStore.getState().token;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method ?? 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Bypass-Tunnel-Reminder': 'true', // Bypass localtunnel landing page
-      ...(token ? { 'Authorization': `Bearer ${token}` } : null),
-      ...(currentHouseholdScopeId ? { 'x-household-id': currentHouseholdScopeId } : null),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  // Create an AbortController for a 10-second timeout
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), 10000);
 
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: options.method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : null),
+        ...(currentHouseholdScopeId ? { 'x-household-id': currentHouseholdScopeId } : null),
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
+    });
+
+    clearTimeout(id);
+
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.status}`);
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return response.json() as Promise<T>;
+  } catch (error: any) {
+    clearTimeout(id);
+    if (error.name === 'AbortError') {
+      throw new Error('Network timeout: Please check your connection or VPN');
+    }
+    throw error;
   }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return response.json() as Promise<T>;
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
