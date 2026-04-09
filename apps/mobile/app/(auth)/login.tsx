@@ -114,7 +114,10 @@ export default function LoginScreen() {
                                 <Pressable
                                     onPress={handleSendCode}
                                     disabled={countdown > 0 || isSendingCode}
-                                    style={[styles.codeButton, (countdown > 0 || isSendingCode) && styles.codeButtonDisabled]}
+                                    style={({ pressed }) => [
+                                        styles.codeButton,
+                                        (countdown > 0 || isSendingCode || pressed) && styles.codeButtonDisabled
+                                    ]}
                                 >
                                     <Text style={styles.codeButtonText}>
                                         {countdown > 0 ? `${countdown}s` : '获取验证码'}
@@ -128,7 +131,10 @@ export default function LoginScreen() {
                         <Pressable
                             onPress={handleLogin}
                             disabled={isLoading}
-                            style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
+                            style={({ pressed }) => [
+                                styles.loginButton,
+                                (isLoading || pressed) && styles.loginButtonDisabled
+                            ]}
                         >
                             <Text style={styles.loginButtonText}>{isLoading ? '登录中...' : '立即登录'}</Text>
                         </Pressable>
@@ -137,13 +143,13 @@ export default function LoginScreen() {
                     <View style={styles.footer}>
                         <Text style={styles.footerText}>其他登录方式</Text>
                         <View style={styles.socialRow}>
-                            <Pressable style={styles.socialIcon}>
+                            <Pressable style={({ pressed }) => [styles.socialIcon, pressed && { opacity: 0.6 }]}>
                                 <Ionicons name="logo-wechat" size={24} color="#07C160" />
                             </Pressable>
-                            <Pressable style={styles.socialIcon}>
+                            <Pressable style={({ pressed }) => [styles.socialIcon, pressed && { opacity: 0.6 }]}>
                                 <Ionicons name="logo-apple" size={24} color="#000000" />
                             </Pressable>
-                            <Pressable style={styles.socialIcon}>
+                            <Pressable style={({ pressed }) => [styles.socialIcon, pressed && { opacity: 0.6 }]}>
                                 <Ionicons name="logo-google" size={24} color="#EA4335" />
                             </Pressable>
                         </View>

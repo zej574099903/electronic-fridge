@@ -19,12 +19,17 @@ export default function RootLayout() {
   useEffect(() => {
     if (!isReady || isLoading) return;
 
-    const inAuthGroup = (segments as string[]).includes('(auth)');
+    const inAuthGroup = segments[0] === '(auth)';
+    const path = segments.join('/');
+
+    console.log('[Auth Guard Sync]', { isAuthenticated, path, inAuthGroup });
 
     if (!isAuthenticated && !inAuthGroup) {
-      router.replace('/(auth)/login' as any);
+      console.log('[Auth Guard] Redirecting to Login...');
+      router.replace('/(auth)/login');
     } else if (isAuthenticated && inAuthGroup) {
-      router.replace('/(tabs)' as any);
+      console.log('[Auth Guard] Redirecting to Tabs...');
+      router.replace('/(tabs)');
     }
   }, [isAuthenticated, segments, isLoading, isReady]);
 
