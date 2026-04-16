@@ -1,0 +1,12 @@
+# 忽略 Node 依赖
+node_modules/
+
+# 关键：忽略所有上传的食材图片
+# 确保您的私人隐私不会上传到远程 Git 仓库（如 GitHub）
+uploads/
+
+# 忽略日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store

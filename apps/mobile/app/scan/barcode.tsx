@@ -1,54 +1,26 @@
 import { useState } from 'react';
 import { Stack, router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, Dimensions } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { ScreenContainer } from '@/src/components/ScreenContainer';
 import { colors, radii, shadows, spacing } from '@/src/constants/colors';
 import { typography } from '@/src/constants/typography';
-import { lookupBarcode } from '@/src/lib/barcode';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function BarcodeScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
-  const [isHandling, setIsHandling] = useState(false);
+  const [scanned, setScanned] = useState(false);
 
-  async function handleRequestPermission() {
-    await requestPermission();
-  }
-
-  async function handleBarcodeScanned({ data }: { data: string }) {
-    if (isHandling) {
-      return;
-    }
-
-    setIsHandling(true);
-
-    try {
-      const result = await lookupBarcode(data);
-
-      if (!result) {
-        router.replace({
-          pathname: '/(tabs)/intake',
-          params: {
-            photo_feedback: '这次没有识别到商品信息，已回到手动录入。',
-          },
-        });
-        return;
-      }
-
-      router.replace({
-        pathname: '/(tabs)/intake',
-        params: {
-          photo_feedback: result.name
-            ? result.source === 'barcode_db'
-              ? `已从商品库带出：${result.name}`
-              : `已帮你带出：${result.name}`
-            : `已识别条码 ${result.rawCode}，但商品库暂时没有这件商品的信息。`,
-        },
-      });
-    } catch {
-      setIsHandling(false);
-    }
+  async function handleBarCodeScanned({ data }: { data: string }) {
+    if (scanned) return;
+    setScanned(true);
+    router.replace({
+      pathname: '/(tabs)/intake',
+      params: { barcode: data, photo_feedback: `成功读取条码: ${data}` },
+    });
   }
 
   const granted = permission?.granted;
@@ -57,36 +29,59 @@ export default function BarcodeScanScreen() {
     <ScreenContainer>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back-outline" size={18} color={colors.primaryDeep} />
-          <Text style={styles.backText}>返回</Text>
+        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <BlurView intensity={20} tint="light" style={styles.backBlur}>
+            <Ionicons name="chevron-back" size={18} color={colors.primary} />
+          </BlurView>
         </Pressable>
-        <Text style={styles.kicker}>补充信息</Text>
-        <Text style={styles.title}>扫包装</Text>
-        <Text style={styles.subtitle}>对准包装条码或商品码，识别后会自动回填到库存流程。</Text>
+        <View style={styles.headerTitleGroup}>
+           <Text style={styles.kicker}>BARCODE SCANNER</Text>
+           <Text style={styles.title}>扫码入库</Text>
+        </View>
       </View>
 
       {!granted ? (
-        <View style={styles.permissionCard}>
-          <Ionicons name="camera-outline" size={28} color={colors.primaryDeep} />
-          <Text style={styles.permissionTitle}>需要相机权限</Text>
-          <Text style={styles.permissionText}>允许访问相机后，才能直接扫包装条码。</Text>
-          <Pressable onPress={() => void handleRequestPermission()} style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>开启相机</Text>
-          </Pressable>
+        <View style={styles.cardWrapper}>
+          <View style={styles.cardBorder}>
+            <View style={styles.glassCard}>
+               <View style={styles.iconCircle}>
+                  <Ionicons name="qr-code" size={32} color={colors.primary} />
+               </View>
+               <Text style={styles.cardTitle}>需要相机权限</Text>
+               <Text style={styles.cardDesc}>允许访问相机后，才能直接通过条形码识别商品信息并自动填表。</Text>
+               <Pressable onPress={() => void requestPermission()} style={styles.primaryBtn}>
+                  <Text style={styles.primaryBtnText}>开启相机</Text>
+               </Pressable>
+            </View>
+          </View>
         </View>
       ) : (
-        <View style={styles.cameraShell}>
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            barcodeScannerSettings={{
-              barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'],
-            }}
-            onBarcodeScanned={isHandling ? undefined : handleBarcodeScanned}
-          />
-          <View style={styles.overlay}>
-            <View style={styles.scanFrame} />
-            <Text style={styles.overlayText}>{isHandling ? '正在读取包装信息...' : '把条码放进框内即可'}</Text>
+        <View style={styles.cameraContainer}>
+          <View style={styles.cameraBorder}>
+             <CameraView 
+               onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+               style={StyleSheet.absoluteFill} 
+             />
+             <View style={styles.overlay}>
+                <View style={styles.maskTop} />
+                <View style={styles.scanRow}>
+                   <View style={styles.maskSide} />
+                   <View style={styles.focusFrame}>
+                      <View style={[styles.corner, styles.tl]} />
+                      <View style={[styles.corner, styles.tr]} />
+                      <View style={[styles.corner, styles.bl]} />
+                      <View style={[styles.corner, styles.br]} />
+                      <View style={styles.scanLine} />
+                   </View>
+                   <View style={styles.maskSide} />
+                </View>
+                <View style={styles.maskBottom}>
+                   <Text style={styles.hint}>请对准商品条形码</Text>
+                   <Pressable onPress={() => router.back()} style={styles.cancelBtn}>
+                      <Text style={styles.cancelBtnText}>直接手动添加</Text>
+                   </Pressable>
+                </View>
+             </View>
           </View>
         </View>
       )}
@@ -95,104 +90,35 @@ export default function BarcodeScanScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    gap: 4,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 4,
-    paddingVertical: 6,
-  },
-  backText: {
-    fontSize: 14,
-    color: colors.primary,
-    fontFamily: typography.bodyBold,
-  },
-  kicker: {
-    color: colors.textMuted,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    fontFamily: typography.bodyBold,
-  },
-  title: {
-    fontSize: 32,
-    color: colors.textPrimary,
-    fontFamily: typography.displayHeavy,
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    lineHeight: 21,
-    maxWidth: 300,
-    fontFamily: typography.bodyMedium,
-  },
-  permissionCard: {
-    margin: spacing.lg,
-    padding: spacing.xl,
-    borderRadius: radii.lg,
-    backgroundColor: 'rgba(255,255,255,0.86)',
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    gap: spacing.md,
-    ...shadows.soft,
-  },
-  permissionTitle: {
-    fontSize: 22,
-    color: colors.textPrimary,
-    fontFamily: typography.displayBold,
-  },
-  permissionText: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 21,
-    fontFamily: typography.bodyMedium,
-  },
-  primaryButton: {
-    minWidth: 180,
-    minHeight: 50,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.pill,
-    backgroundColor: colors.primaryDeep,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButtonText: {
-    color: colors.textOnDark,
-    fontSize: 14,
-    fontFamily: typography.bodyBold,
-  },
-  cameraShell: {
-    flex: 1,
-    margin: spacing.lg,
-    borderRadius: radii.lg,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: '#0E2233',
-    ...shadows.soft,
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: spacing.lg,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-  },
-  scanFrame: {
-    width: 240,
-    height: 150,
-    borderRadius: radii.lg,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.9)',
-    backgroundColor: 'transparent',
-  },
-  overlayText: {
-    color: colors.textOnDark,
-    fontSize: 14,
-    fontFamily: typography.bodyBold,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 20, paddingHorizontal: 24 },
+  backBtn: { borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
+  backBlur: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.6)' },
+  headerTitleGroup: { gap: 2 },
+  kicker: { color: colors.primary, fontSize: 10, fontFamily: typography.bodyBold, letterSpacing: 2 },
+  title: { color: colors.textPrimary, fontSize: 28, fontFamily: typography.displayBold, letterSpacing: -0.5 },
+  cardWrapper: { padding: 24, ...shadows.card },
+  cardBorder: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.5)' },
+  glassCard: { padding: 32, backgroundColor: 'rgba(255, 255, 255, 0.4)', alignItems: 'center', gap: 16 },
+  iconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', ...shadows.soft },
+  cardTitle: { fontSize: 20, fontFamily: typography.displayBold, color: colors.textPrimary },
+  cardDesc: { fontSize: 14, fontFamily: typography.bodyMedium, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  primaryBtn: { height: 50, paddingHorizontal: 32, borderRadius: 25, backgroundColor: colors.primaryDeep, alignItems: 'center', justifyContent: 'center', marginTop: 8, ...shadows.soft },
+  primaryBtnText: { color: '#FFF', fontSize: 15, fontFamily: typography.bodyBold },
+  cameraContainer: { flex: 1, padding: 24 },
+  cameraBorder: { flex: 1, borderRadius: 32, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  overlay: { ...StyleSheet.absoluteFillObject },
+  maskTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  scanRow: { flexDirection: 'row', height: 200 },
+  maskSide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  focusFrame: { width: 280, position: 'relative' },
+  corner: { position: 'absolute', width: 24, height: 24, borderColor: colors.primary, borderWidth: 4 },
+  tl: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
+  tr: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
+  bl: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
+  br: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
+  scanLine: { position: 'absolute', top: '50%', left: '10%', right: '10%', height: 2, backgroundColor: colors.primary, opacity: 0.6 },
+  maskBottom: { flex: 2, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', paddingTop: 40, gap: 32 },
+  hint: { color: '#FFF', fontSize: 15, fontFamily: typography.bodyBold, opacity: 0.9 },
+  cancelBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  cancelBtnText: { color: '#FFF', fontSize: 13, fontFamily: typography.bodyBold },
 });

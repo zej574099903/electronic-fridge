@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, Dimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ScreenContainer } from '@/src/components/ScreenContainer';
+import { GradientText } from '@/src/components/GradientText';
 import { colors, radii, shadows, spacing } from '@/src/constants/colors';
 import { typography } from '@/src/constants/typography';
 import { getDaysUntilExpiration, getExpirePriority } from '@/src/lib/expiry';
 import { formatLastSyncedAt, useInventoryStore } from '@/src/store/useInventoryStore';
 import { FridgeItem, ItemStatus } from '@/src/types/item';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const statusLabelMap: Record<ItemStatus, string> = {
   active: '库存中',
@@ -18,12 +23,9 @@ const statusLabelMap: Record<ItemStatus, string> = {
 };
 
 export default function InventoryTabScreen() {
-  const params = useLocalSearchParams<{
-    itemId?: string;
-  }>();
+  const params = useLocalSearchParams<{ itemId?: string }>();
   const items = useInventoryStore((state) => state.items);
   const initialized = useInventoryStore((state) => state.initialized);
-  const isMutating = useInventoryStore((state) => state.isMutating);
   const lastSyncedAt = useInventoryStore((state) => state.lastSyncedAt);
   const updateItemStatus = useInventoryStore((state) => state.updateItemStatus);
   const removeItem = useInventoryStore((state) => state.removeItem);
@@ -37,10 +39,7 @@ export default function InventoryTabScreen() {
       .filter((item) => item.status === 'active')
       .sort((left, right) => {
         const priorityDelta = getExpirePriority(left) - getExpirePriority(right);
-        if (priorityDelta !== 0) {
-          return priorityDelta;
-        }
-
+        if (priorityDelta !== 0) return priorityDelta;
         return new Date(right.updatedAt ?? 0).getTime() - new Date(left.updatedAt ?? 0).getTime();
       });
   }, [items]);
@@ -50,15 +49,11 @@ export default function InventoryTabScreen() {
   const syncText = formatLastSyncedAt(lastSyncedAt);
 
   useEffect(() => {
-    if (!initialized) {
-      void fetchItems();
-    }
+    if (!initialized) void fetchItems();
   }, [fetchItems, initialized]);
 
   useEffect(() => {
-    if (params.itemId) {
-      setExpandedItemId(params.itemId);
-    }
+    if (params.itemId) setExpandedItemId(params.itemId);
   }, [params.itemId]);
 
   async function handleRefresh() {
@@ -109,434 +104,464 @@ export default function InventoryTabScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} />}
+        refreshControl={
+          <RefreshControl 
+            refreshing={isRefreshing} 
+            onRefresh={() => void handleRefresh()} 
+            tintColor={colors.primary} 
+          />
+        }
       >
-        <View style={styles.topGlow} />
-
         <View style={styles.header}>
-          <View style={styles.headerBody}>
-            <Text style={styles.kicker}>库存</Text>
-            <Text style={styles.title}>现有库存</Text>
-            <Text style={styles.subtitle}>{currentItems.length} 件在库，按到期顺序排列</Text>
-            <Text style={styles.syncText}>{syncText}</Text>
+          <View style={styles.headerText}>
+            <Text style={styles.kicker}>INVENTORY STATUS</Text>
+            <GradientText colors={['#0F4C5C', '#2A9D8F']} style={styles.title}>
+              现有列表
+            </GradientText>
+            <View style={styles.syncRow}>
+              <View style={styles.syncDot} />
+              <Text style={styles.subtitle}>{syncText}</Text>
+            </View>
           </View>
           <Pressable onPress={() => void handleRefresh()} style={styles.refreshButton}>
-            <Ionicons name="refresh-outline" size={18} color={colors.primaryDeep} />
+            <BlurView intensity={20} tint="light" style={styles.refreshBlur}>
+              <Ionicons name="refresh-outline" size={18} color={colors.primary} />
+            </BlurView>
           </Pressable>
         </View>
 
-        <View style={styles.metricsRow}>
-          <InventoryMetric label="优先" value={urgentCount} />
-          <InventoryMetric label="在库" value={currentItems.length} />
-          <InventoryMetric label="未设日期" value={undatedCount} />
-        </View>
-
-        <View style={styles.sectionBlock}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionHeaderText}>
-              <Text style={styles.sectionEyebrow}>列表</Text>
-              <Text style={styles.sectionTitle}>按到期排列</Text>
-            </View>
-            <Text style={styles.sectionMeta}>{currentItems.length} 件</Text>
-          </View>
-          <Text style={styles.sectionDescription}>长按卡片可直接标记吃掉、丢弃或删除。</Text>
-
-          {currentItems.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <View style={styles.emptyIconShell}>
-                <Ionicons name="cube-outline" size={24} color={colors.primaryDeep} />
+        {/* Global Styled Metrics */}
+        <View style={styles.cardWrapper}>
+          <View style={styles.cardBorder}>
+            <BlurView intensity={40} tint="light" style={styles.summaryCard}>
+              <View style={styles.metricsRow}>
+                <OverviewMetric label="优先" value={urgentCount} icon="alert-circle" tint={colors.danger} />
+                <View style={styles.metricDivider} />
+                <OverviewMetric label="全部" value={currentItems.length} icon="cube" tint={colors.primary} />
+                <View style={styles.metricDivider} />
+                <OverviewMetric label="待补" value={undatedCount} icon="time" tint={colors.warning} />
               </View>
-              <Text style={styles.emptyTitle}>现在还没有库存</Text>
-              <Text style={styles.emptyDescription}>从中间的入库按钮开始，第一件记录会出现在这里。</Text>
-              <Pressable onPress={() => router.push('/(tabs)/intake')} style={styles.emptyActionButton}>
-                <Text style={styles.emptyActionText}>去入库</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.inventoryList}>
-              {currentItems.map((item) => {
-                const priority = getExpirePriority(item);
-                const toneColor = priority <= 1 ? colors.danger : priority <= 3 ? colors.warning : colors.success;
-                const expanded = expandedItemId === item.id;
-
-                return (
-                  <View key={item.id} style={[styles.itemCard, params.itemId === item.id && styles.itemCardHighlighted]}>
-                    <Pressable
-                      onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
-                      onLongPress={() => setExpandedItemId(expanded ? null : item.id)}
-                    >
-                      <View style={styles.itemTop}>
-                        {item.photoUri ? (
-                          <Image source={{ uri: item.photoUri }} style={styles.itemPhoto} />
-                        ) : (
-                          <View style={[styles.itemPhotoFallback, { backgroundColor: `${toneColor}18` }]}>
-                            <Ionicons name="image-outline" size={22} color={toneColor} />
-                          </View>
-                        )}
-
-                        <View style={styles.itemBody}>
-                          <View style={styles.itemMetaRow}>
-                            <View style={[styles.itemExpirePill, { backgroundColor: `${toneColor}14` }]}>
-                              <Text style={[styles.itemExpirePillText, { color: toneColor }]}>{formatRemainingText(item)}</Text>
-                            </View>
-                          </View>
-                          <Text style={styles.itemName}>{item.name}</Text>
-                          <Text style={styles.itemMeta}>{item.expiresOn ? `到期日 ${item.expiresOn.slice(0, 10)}` : '未设置日期'}</Text>
-                        </View>
-                      </View>
-                    </Pressable>
-
-                    {expanded ? (
-                      <View style={styles.itemActionRow}>
-                        <MiniAction
-                          label="吃掉"
-                          icon="restaurant-outline"
-                          color={colors.success}
-                          backgroundColor="#EFFAF6"
-                          borderColor="#CFECDD"
-                          onPress={() => void handleStatusUpdate(item.id, item.name, 'eaten')}
-                        />
-                        <MiniAction
-                          label="丢弃"
-                          icon="trash-outline"
-                          color={colors.danger}
-                          backgroundColor="#FFF4F2"
-                          borderColor="#F3D3CF"
-                          onPress={() => void handleStatusUpdate(item.id, item.name, 'discarded')}
-                        />
-                        <MiniAction
-                          label="删除"
-                          icon="close-outline"
-                          color={colors.textSecondary}
-                          backgroundColor="#F5F8FB"
-                          borderColor={colors.border}
-                          onPress={() => handleDelete(item.id, item.name)}
-                        />
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </View>
-          )}
+            </BlurView>
+          </View>
         </View>
+
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionTitleGroup}>
+            <View style={styles.sectionSlug} />
+            <Text style={styles.sectionTitle}>库存清单</Text>
+          </View>
+          <Text style={styles.sectionLabel}>LIST</Text>
+        </View>
+
+        {currentItems.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <BlurView intensity={10} tint="light" style={styles.emptyBlur}>
+              <View style={styles.emptyCircle}>
+                <Ionicons name="cube-outline" size={32} color={colors.primary} />
+              </View>
+              <Text style={styles.emptyText}>当前没有库存物品</Text>
+              <Pressable onPress={() => router.push('/(tabs)/intake')} style={styles.emptyButton}>
+                <Text style={styles.emptyButtonText}>去入库</Text>
+              </Pressable>
+            </BlurView>
+          </View>
+        ) : (
+          <View style={styles.itemGrid}>
+            {currentItems.map((item, index) => {
+              const priority = getExpirePriority(item);
+              const toneColor = priority <= 1 ? colors.danger : priority <= 3 ? colors.warning : colors.primaryDeep;
+              const expanded = expandedItemId === item.id;
+
+              return (
+                <View key={item.id} style={styles.itemWrapper}>
+                  <Pressable
+                    onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
+                    onLongPress={() => setExpandedItemId(expanded ? null : item.id)}
+                    style={[styles.itemCard, params.itemId === item.id && styles.itemCardHighlighted]}
+                  >
+                    <View style={styles.itemImageWrapper}>
+                      {item.photoUri ? (
+                        <Image source={{ uri: item.photoUri }} style={styles.itemImage} resizeMode="cover" />
+                      ) : (
+                        <View style={styles.itemFallback}>
+                          <Ionicons name="file-tray-full-outline" size={24} color={colors.textMuted} />
+                        </View>
+                      )}
+                      {priority <= 1 && (
+                        <BlurView intensity={60} tint="light" style={styles.urgentTag}>
+                          <Text style={styles.urgentText}>紧急</Text>
+                        </BlurView>
+                      )}
+                    </View>
+
+                    <View style={styles.itemDetails}>
+                      <View style={styles.itemHeaderInner}>
+                        <Text style={styles.itemLabel}>ITEM #{index + 1}</Text>
+                        <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                      </View>
+                      <View style={styles.itemTextContent}>
+                        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={[styles.itemSubtext, { color: toneColor }]}>
+                          {formatRemainingText(item)}
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+
+                  {expanded && (
+                    <BlurView intensity={20} tint="light" style={styles.actionRow}>
+                      <MiniAction
+                        label="吃掉"
+                        icon="restaurant-outline"
+                        color={colors.success}
+                        onPress={() => void handleStatusUpdate(item.id, item.name, 'eaten')}
+                      />
+                      <View style={styles.actionDivider} />
+                      <MiniAction
+                        label="丢弃"
+                        icon="trash-outline"
+                        color={colors.danger}
+                        onPress={() => void handleStatusUpdate(item.id, item.name, 'discarded')}
+                      />
+                      <View style={styles.actionDivider} />
+                      <MiniAction
+                        label="删除"
+                        icon="close-outline"
+                        color={colors.textSecondary}
+                        onPress={() => handleDelete(item.id, item.name)}
+                      />
+                    </BlurView>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
     </ScreenContainer>
   );
 }
 
-function InventoryMetric({ label, value }: { label: string; value: number }) {
+function OverviewMetric({ label, value, icon, tint }: { label: string; value: number; icon: keyof typeof Ionicons.glyphMap; tint: string; }) {
   return (
-    <View style={styles.metricCard}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+    <View style={styles.metric}>
+      <View style={styles.metricIconBox}>
+        <Ionicons name={icon} size={15} color={tint} />
+      </View>
+      <View>
+        <Text style={styles.metricVal}>{value}</Text>
+        <Text style={styles.metricLab}>{label}</Text>
+      </View>
     </View>
+  );
+}
+
+function MiniAction({ label, icon, color, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; color: string; onPress: () => void; }) {
+  return (
+    <Pressable onPress={onPress} style={styles.actionBtn}>
+      <Ionicons name={icon} size={16} color={color} />
+      <Text style={[styles.actionBtnText, { color }]}>{label}</Text>
+    </Pressable>
   );
 }
 
 function formatRemainingText(item: FridgeItem) {
   const days = getDaysUntilExpiration(item);
-
-  if (days === null) {
-    return '未设日期';
-  }
-
-  if (days < 0) {
-    return `已过期 ${Math.abs(days)} 天`;
-  }
-
-  if (days === 0) {
-    return '今天到期';
-  }
-
-  if (days === 1) {
-    return '明天到期';
-  }
-
+  if (days === null) return '未设置期限';
+  if (days < 0) return `已过期 ${Math.abs(days)} 天`;
+  if (days === 0) return '今日到期';
+  if (days === 1) return '明日到期';
   return `${days} 天后到期`;
-}
-
-function MiniAction({
-  label,
-  icon,
-  color,
-  backgroundColor,
-  borderColor,
-  onPress,
-}: {
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  backgroundColor: string;
-  borderColor: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable onPress={onPress} style={[styles.miniAction, { backgroundColor, borderColor }]}>
-      <Ionicons name={icon} size={16} color={color} />
-      <Text style={[styles.miniActionText, { color }]}>{label}</Text>
-    </Pressable>
-  );
 }
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: 136,
-    gap: spacing.xl,
-  },
-  topGlow: {
-    position: 'absolute',
-    top: -120,
-    right: -84,
-    width: 300,
-    height: 300,
-    borderRadius: 999,
-    backgroundColor: 'rgba(111,214,255,0.11)',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 140,
+    gap: 24,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.md,
+    marginTop: 8,
   },
-  headerBody: {
-    flex: 1,
-    gap: 4,
+  headerText: {
+    gap: 2,
   },
   kicker: {
-    color: colors.textMuted,
-    fontSize: 11,
-    letterSpacing: 1.4,
+    color: colors.primary,
+    fontSize: 10,
     fontFamily: typography.bodyBold,
+    letterSpacing: 2.5,
   },
   title: {
     color: colors.textPrimary,
     fontSize: 34,
-    fontFamily: typography.displayHeavy,
+    fontFamily: typography.displayBold,
+    letterSpacing: -0.5,
+  },
+  syncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  syncDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#34D399',
   },
   subtitle: {
     color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 21,
-    fontFamily: typography.bodyMedium,
-  },
-  syncText: {
-    color: colors.textMuted,
     fontSize: 12,
-    fontFamily: typography.bodySemibold,
+    fontFamily: typography.bodyMedium,
+    opacity: 0.8,
   },
   refreshButton: {
-    width: 42,
-    height: 42,
-    borderRadius: radii.pill,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  refreshBlur: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  cardWrapper: {
+    ...shadows.card,
+  },
+  cardBorder: {
+    borderRadius: 24,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.soft,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  summaryCard: {
+    padding: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
   metricsRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  metricCard: {
-    flex: 1,
-    borderRadius: radii.md,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.sm,
     alignItems: 'center',
-    gap: 2,
-    backgroundColor: colors.surface,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    padding: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  metric: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  metricDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  metricIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
     ...shadows.soft,
   },
-  metricValue: {
-    color: colors.textPrimary,
-    fontSize: 24,
+  metricVal: {
+    fontSize: 18,
     fontFamily: typography.displayBold,
+    color: colors.textPrimary,
   },
-  metricLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
+  metricLab: {
+    fontSize: 11,
     fontFamily: typography.bodyBold,
-  },
-  sectionBlock: {
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: 'rgba(255,255,255,0.84)',
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.soft,
+    color: colors.textMuted,
   },
   sectionHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.md,
+    paddingHorizontal: 4,
   },
-  sectionHeaderText: {
-    flex: 1,
-    gap: 4,
+  sectionTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  sectionEyebrow: {
-    color: colors.textMuted,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    fontFamily: typography.bodyBold,
+  sectionSlug: {
+    width: 4,
+    height: 18,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
   },
   sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontFamily: typography.displayBold,
-  },
-  sectionMeta: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontFamily: typography.bodyBold,
-    paddingTop: 6,
-  },
-  sectionDescription: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 21,
-    fontFamily: typography.bodyMedium,
-  },
-  emptyCard: {
-    paddingVertical: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  emptyIconShell: {
-    width: 58,
-    height: 58,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    fontFamily: typography.displayBold,
-  },
-  emptyDescription: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    fontSize: 14,
-    lineHeight: 21,
-    fontFamily: typography.bodyMedium,
-  },
-  emptyActionButton: {
-    minHeight: 48,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.pill,
-    backgroundColor: colors.primaryDeep,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: spacing.xs,
-  },
-  emptyActionText: {
-    color: colors.textOnDark,
-    fontSize: 14,
-    fontFamily: typography.bodyBold,
-  },
-  inventoryList: {
-    gap: spacing.sm,
-  },
-  itemCard: {
-    borderRadius: radii.lg,
-    padding: spacing.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: spacing.md,
-  },
-  itemCardHighlighted: {
-    borderColor: colors.primaryDeep,
-    shadowColor: colors.primaryDeep,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 5,
-  },
-  itemTop: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: spacing.sm,
-  },
-  itemPhoto: {
-    width: 90,
-    height: 90,
-    borderRadius: radii.md,
-  },
-  itemPhotoFallback: {
-    width: 90,
-    height: 90,
-    borderRadius: radii.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  itemBody: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: 6,
-  },
-  itemMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  itemExpirePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radii.pill,
-  },
-  itemExpirePillText: {
-    fontSize: 12,
-    fontFamily: typography.bodyBold,
-  },
-  itemName: {
-    color: colors.textPrimary,
     fontSize: 18,
     fontFamily: typography.displayBold,
+    color: colors.textPrimary,
   },
-  itemMeta: {
-    color: colors.textSecondary,
-    fontSize: 13,
+  sectionLabel: {
+    fontSize: 9,
+    fontFamily: typography.bodyBold,
+    color: colors.textMuted,
+    letterSpacing: 2,
+  },
+  emptyBox: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  emptyBlur: {
+    padding: 40,
+    alignItems: 'center',
+    gap: 16,
+  },
+  emptyCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
     fontFamily: typography.bodyMedium,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
-  itemActionRow: {
+  emptyButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primaryDeep,
+    marginTop: 8,
+  },
+  emptyButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontFamily: typography.bodyBold,
+  },
+  itemGrid: {
+    gap: 16,
+  },
+  itemWrapper: {
+    gap: 8,
+  },
+  itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingTop: 2,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+    ...shadows.soft,
   },
-  miniAction: {
+  itemCardHighlighted: {
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+  },
+  itemImageWrapper: {
+    width: 80,
+    height: 80,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceSecondary,
+  },
+  itemImage: {
+    width: '100%',
+    height: '100%',
+  },
+  itemFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  urgentTag: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(218, 106, 94, 0.4)',
+  },
+  urgentText: {
+    fontSize: 7,
+    fontFamily: typography.bodyHeavy,
+    color: colors.danger,
+    letterSpacing: 0.5,
+  },
+  itemDetails: {
+    flex: 1,
+    paddingLeft: 16,
+    paddingRight: 4,
+    gap: 4,
+  },
+  itemHeaderInner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  itemLabel: {
+    fontSize: 8,
+    fontFamily: typography.bodyBold,
+    color: colors.textMuted,
+    letterSpacing: 0.8,
+  },
+  itemTextContent: {
+    gap: 0,
+  },
+  itemName: {
+    fontSize: 20,
+    fontFamily: typography.displayBold,
+    color: colors.textPrimary,
+  },
+  itemSubtext: {
+    fontSize: 12,
+    fontFamily: typography.bodySemibold,
+    opacity: 0.9,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+    marginLeft: 12,
+    marginRight: 12,
+  },
+  actionBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radii.md,
-    borderWidth: 1,
+    paddingVertical: 8,
   },
-  miniActionText: {
-    fontSize: 13,
+  actionBtnText: {
+    fontSize: 12,
     fontFamily: typography.bodyBold,
+  },
+  actionDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: 'rgba(0,0,0,0.05)',
   },
 });

@@ -1,45 +1,33 @@
 import { useRef, useState } from 'react';
 import { Stack, router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, Dimensions } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { ScreenContainer } from '@/src/components/ScreenContainer';
 import { colors, radii, shadows, spacing } from '@/src/constants/colors';
 import { typography } from '@/src/constants/typography';
 import { persistPhotoUri } from '@/src/lib/photo';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function ProductPhotoScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [isCapturing, setIsCapturing] = useState(false);
   const cameraRef = useRef<CameraView | null>(null);
 
-  async function handleRequestPermission() {
-    await requestPermission();
-  }
-
   async function handleCapture() {
-    if (!cameraRef.current || isCapturing) {
-      return;
-    }
-
+    if (!cameraRef.current || isCapturing) return;
     setIsCapturing(true);
-
     try {
-      const picture = await cameraRef.current.takePictureAsync({
-        quality: 0.7,
-      });
-
-      if (!picture?.uri) {
-        throw new Error('capture failed');
-      }
-
+      const picture = await cameraRef.current.takePictureAsync({ quality: 0.7 });
+      if (!picture?.uri) throw new Error('capture failed');
       const persistedUri = await persistPhotoUri(picture.uri);
-
       router.replace({
         pathname: '/(tabs)/intake',
         params: {
           photo_uri: persistedUri,
-          photo_feedback: '已拍好照片，选个到期时间就能入库。',
+          photo_feedback: '照片已采集。',
         },
       });
     } catch {
@@ -53,34 +41,57 @@ export default function ProductPhotoScreen() {
     <ScreenContainer>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back-outline" size={18} color={colors.primaryDeep} />
-          <Text style={styles.backText}>返回</Text>
+        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <BlurView intensity={20} tint="light" style={styles.backBlur}>
+            <Ionicons name="chevron-back" size={18} color={colors.primary} />
+          </BlurView>
         </Pressable>
-        <Text style={styles.kicker}>快速入库</Text>
-        <Text style={styles.title}>拍食物</Text>
-        <Text style={styles.subtitle}>拍下外观，后面会直接用照片识别库存。</Text>
+        <View style={styles.headerTitleGroup}>
+           <Text style={styles.kicker}>VISUAL CAPTURE</Text>
+           <Text style={styles.title}>拍摄外观</Text>
+        </View>
       </View>
 
       {!granted ? (
-        <View style={styles.permissionCard}>
-          <Ionicons name="camera-outline" size={28} color={colors.primaryDeep} />
-          <Text style={styles.permissionTitle}>需要相机权限</Text>
-          <Text style={styles.permissionText}>允许访问相机后，才能用真机直接拍照入库。</Text>
-          <Pressable onPress={() => void handleRequestPermission()} style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>开启相机</Text>
-          </Pressable>
+        <View style={styles.cardWrapper}>
+          <View style={styles.cardBorder}>
+            <View style={styles.glassCard}>
+               <View style={styles.iconCircle}>
+                  <Ionicons name="camera" size={32} color={colors.primary} />
+               </View>
+               <Text style={styles.cardTitle}>需要相机权限</Text>
+               <Text style={styles.cardDesc}>我们需要使用相机来拍摄食材外观，以便在库存中直观展示。</Text>
+               <Pressable onPress={() => void requestPermission()} style={styles.primaryBtn}>
+                  <Text style={styles.primaryBtnText}>开启相机</Text>
+               </Pressable>
+            </View>
+          </View>
         </View>
       ) : (
-        <View style={styles.cameraShell}>
-          <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} />
-          <View style={styles.overlay}>
-            <View style={styles.scanFrame} />
-            <Text style={styles.overlayText}>{isCapturing ? '正在保存照片...' : '把食物放进框内后点击拍照'}</Text>
-            <Pressable onPress={() => void handleCapture()} disabled={isCapturing} style={[styles.captureButton, isCapturing && styles.captureButtonDisabled]}>
-              <Ionicons name="camera" size={18} color={colors.textOnDark} />
-              <Text style={styles.captureText}>{isCapturing ? '保存中...' : '拍照带回'}</Text>
-            </Pressable>
+        <View style={styles.cameraContainer}>
+          <View style={styles.cameraBorder}>
+             <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} />
+             <View style={styles.overlay}>
+                <View style={styles.maskTop} />
+                <View style={styles.scanRow}>
+                   <View style={styles.maskSide} />
+                   <View style={styles.focusFrame}>
+                      <View style={[styles.corner, styles.tl]} />
+                      <View style={[styles.corner, styles.tr]} />
+                      <View style={[styles.corner, styles.bl]} />
+                      <View style={[styles.corner, styles.br]} />
+                   </View>
+                   <View style={styles.maskSide} />
+                </View>
+                <View style={styles.maskBottom}>
+                   <Text style={styles.hint}>{isCapturing ? '正在保存...' : '将食物置于框内拍摄'}</Text>
+                   <Pressable onPress={handleCapture} disabled={isCapturing} style={[styles.captureBtn, isCapturing && styles.btnDisabled]}>
+                      <View style={styles.captureInner}>
+                         <Ionicons name="camera" size={24} color="#FFF" />
+                      </View>
+                   </Pressable>
+                </View>
+             </View>
           </View>
         </View>
       )}
@@ -89,121 +100,36 @@ export default function ProductPhotoScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    gap: 4,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 4,
-    paddingVertical: 6,
-  },
-  backText: {
-    fontSize: 14,
-    color: colors.primary,
-    fontFamily: typography.bodyBold,
-  },
-  kicker: {
-    color: colors.textMuted,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    fontFamily: typography.bodyBold,
-  },
-  title: {
-    fontSize: 32,
-    color: colors.textPrimary,
-    fontFamily: typography.displayHeavy,
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    lineHeight: 21,
-    maxWidth: 300,
-    fontFamily: typography.bodyMedium,
-  },
-  permissionCard: {
-    margin: spacing.lg,
-    padding: spacing.xl,
-    borderRadius: radii.lg,
-    backgroundColor: 'rgba(255,255,255,0.86)',
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    gap: spacing.md,
-    ...shadows.soft,
-  },
-  permissionTitle: {
-    fontSize: 22,
-    color: colors.textPrimary,
-    fontFamily: typography.displayBold,
-  },
-  permissionText: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 21,
-    fontFamily: typography.bodyMedium,
-  },
-  primaryButton: {
-    minWidth: 180,
-    minHeight: 50,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.pill,
-    backgroundColor: colors.primaryDeep,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButtonText: {
-    color: colors.textOnDark,
-    fontSize: 14,
-    fontFamily: typography.bodyBold,
-  },
-  cameraShell: {
-    flex: 1,
-    margin: spacing.lg,
-    borderRadius: radii.lg,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: '#0E2233',
-    ...shadows.soft,
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: spacing.lg,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-  },
-  scanFrame: {
-    width: 240,
-    height: 240,
-    borderRadius: radii.lg,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.9)',
-    backgroundColor: 'transparent',
-  },
-  overlayText: {
-    color: colors.textOnDark,
-    fontSize: 14,
-    fontFamily: typography.bodyBold,
-  },
-  captureButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: spacing.lg,
-    minHeight: 52,
-    borderRadius: radii.pill,
-    backgroundColor: colors.primaryDeep,
-  },
-  captureButtonDisabled: {
-    opacity: 0.6,
-  },
-  captureText: {
-    color: colors.textOnDark,
-    fontSize: 14,
-    fontFamily: typography.bodyBold,
-  },
+  content: { paddingHorizontal: 24, paddingTop: 16, gap: 24 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 20, paddingHorizontal: 24 },
+  backBtn: { borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
+  backBlur: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.6)' },
+  headerTitleGroup: { gap: 2 },
+  kicker: { color: colors.primary, fontSize: 10, fontFamily: typography.bodyBold, letterSpacing: 2 },
+  title: { color: colors.textPrimary, fontSize: 28, fontFamily: typography.displayBold, letterSpacing: -0.5 },
+  cardWrapper: { padding: 24, ...shadows.card },
+  cardBorder: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' },
+  glassCard: { padding: 32, backgroundColor: 'rgba(255,255,255,0.4)', alignItems: 'center', gap: 16 },
+  iconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', ...shadows.soft },
+  cardTitle: { fontSize: 20, fontFamily: typography.displayBold, color: colors.textPrimary },
+  cardDesc: { fontSize: 14, fontFamily: typography.bodyMedium, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  primaryBtn: { height: 50, paddingHorizontal: 32, borderRadius: 25, backgroundColor: colors.primaryDeep, alignItems: 'center', justifyContent: 'center', marginTop: 8, ...shadows.soft },
+  primaryBtnText: { color: '#FFF', fontSize: 15, fontFamily: typography.bodyBold },
+  cameraContainer: { flex: 1, padding: 24 },
+  cameraBorder: { flex: 1, borderRadius: 32, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  overlay: { ...StyleSheet.absoluteFillObject },
+  maskTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  scanRow: { flexDirection: 'row', height: 280 },
+  maskSide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  focusFrame: { width: 280, position: 'relative' },
+  corner: { position: 'absolute', width: 20, height: 20, borderColor: colors.primary, borderWidth: 3 },
+  tl: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
+  tr: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
+  bl: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
+  br: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
+  maskBottom: { flex: 1.5, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', paddingTop: 32, gap: 24 },
+  hint: { color: '#FFF', fontSize: 14, fontFamily: typography.bodyBold, opacity: 0.8 },
+  captureBtn: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.2)', padding: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
+  captureInner: { flex: 1, borderRadius: 34, backgroundColor: colors.primaryDeep, alignItems: 'center', justifyContent: 'center', ...shadows.soft },
+  btnDisabled: { opacity: 0.5 },
 });

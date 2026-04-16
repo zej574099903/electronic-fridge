@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ScreenContainer } from '@/src/components/ScreenContainer';
+import { GradientText } from '@/src/components/GradientText';
 import { colors, radii, shadows, spacing } from '@/src/constants/colors';
 import { typography } from '@/src/constants/typography';
 import { getDaysUntilExpiration, getExpirePriority } from '@/src/lib/expiry';
 import { formatLastSyncedAt, useInventoryStore } from '@/src/store/useInventoryStore';
 import { FridgeItem } from '@/src/types/item';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function HomeTabScreen() {
   const items = useInventoryStore((state) => state.items);
@@ -25,7 +30,6 @@ export default function HomeTabScreen() {
         if (priorityDelta !== 0) {
           return priorityDelta;
         }
-
         return new Date(right.updatedAt ?? 0).getTime() - new Date(left.updatedAt ?? 0).getTime();
       });
   }, [items]);
@@ -50,447 +54,480 @@ export default function HomeTabScreen() {
     }
   }
 
-  const headline =
-    currentItems.length === 0
-      ? '开始记录'
-      : urgentItems.length > 0
-        ? '先处理'
-        : '状态稳定';
-
-  const description =
-    currentItems.length === 0
-      ? '从一件开始。'
-      : urgentItems.length > 0
-        ? `${urgentItems.length} 件临近到期`
-        : `${currentItems.length} 件在库`;
+  const headline = currentItems.length === 0 ? '添加新物品' : urgentItems.length > 0 ? '过期预警报告' : '状态正常';
+  const description = currentItems.length === 0 ? '你的冰箱目前没有任何记录，请点击下方拍摄入库' : urgentItems.length > 0 ? `有 ${urgentItems.length} 件物品即将过期，建议优先处理` : `目前所有库存均在保质期内，共有 ${currentItems.length} 件记录`;
 
   return (
     <ScreenContainer>
       <StatusBar style="dark" />
+      
+      {/* Refined Background Gradient */}
+      <LinearGradient
+        colors={['#E6F0F5', '#F3F7FB', '#FFFFFF']}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.topGlow} />
+
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} />}
+        refreshControl={
+          <RefreshControl 
+            refreshing={isRefreshing} 
+            onRefresh={() => void handleRefresh()} 
+            tintColor={colors.primary} 
+          />
+        }
       >
-        <View style={styles.topGlow} />
-
         <View style={styles.header}>
           <View style={styles.headerText}>
-            <Text style={styles.kicker}>总览</Text>
-            <Text style={styles.title}>冰箱</Text>
-            <Text style={styles.subtitle}>{syncText}</Text>
+            <Text style={styles.kicker}>EXPIRY MANAGER</Text>
+            <GradientText colors={['#0F4C5C', '#2A9D8F']} style={styles.brandTitle}>
+              电子冰箱
+            </GradientText>
+            <View style={styles.syncRow}>
+              <View style={styles.syncDot} />
+              <Text style={styles.subtitle}>{syncText}</Text>
+            </View>
           </View>
           <Pressable onPress={() => void handleRefresh()} style={styles.refreshButton}>
-            <Ionicons name="refresh-outline" size={18} color={colors.primaryDeep} />
+            <BlurView intensity={20} tint="light" style={styles.refreshBlur}>
+              <Ionicons name="refresh-outline" size={18} color={colors.primary} />
+            </BlurView>
           </Pressable>
         </View>
 
-        <View style={styles.summaryBlock}>
-          <View style={styles.summaryHeader}>
-            <View style={styles.summaryText}>
-              <Text style={styles.summaryEyebrow}>状态</Text>
-              <Text style={styles.summaryHeadline}>{headline}</Text>
-              <Text style={styles.summaryDescription}>{description}</Text>
-            </View>
-            <View style={styles.summaryBadge}>
-              <View style={styles.summaryBadgeIconShell}>
-                <Ionicons name="apps-outline" size={15} color={colors.primaryDeep} />
+        {/* Improved Glassmorphism Summary Card */}
+        <View style={styles.cardWrapper}>
+          <View style={styles.cardBorder}>
+            <BlurView intensity={40} tint="light" style={styles.summaryCard}>
+              <View style={styles.summaryTop}>
+                <View style={styles.summaryInfo}>
+                  <Text style={styles.summaryLabel}>核心摘要</Text>
+                  <GradientText colors={['#1F7A8C', '#48CAE4']} style={styles.summaryHeadline}>
+                    {headline}
+                  </GradientText>
+                  <Text style={styles.summaryDesc}>{description}</Text>
+                </View>
+                <View style={styles.totalBadge}>
+                  <Text style={styles.totalValue}>{currentItems.length}</Text>
+                  <Text style={styles.totalLabel}>总数</Text>
+                </View>
               </View>
-              <Text style={styles.summaryBadgeValue}>{currentItems.length}</Text>
-              <Text style={styles.summaryBadgeLabel}>总数</Text>
-            </View>
-          </View>
 
-          <View style={styles.metricsRow}>
-            <OverviewMetric label="临期" value={urgentItems.length} icon="alert-circle-outline" tint={colors.danger} backgroundColor="#FFF2F0" />
-            <OverviewMetric label="安全" value={safeItems.length} icon="shield-checkmark-outline" tint={colors.success} backgroundColor="#EFFAF6" />
-            <OverviewMetric label="在库" value={currentItems.length} icon="cube-outline" tint={colors.info} backgroundColor="#EEF6FC" />
+              <View style={styles.metricsRow}>
+                <OverviewMetric label="临期" value={urgentItems.length} icon="alert-circle" tint={colors.danger} />
+                <View style={styles.metricDivider} />
+                <OverviewMetric label="安全" value={safeItems.length} icon="shield-checkmark" tint={colors.success} />
+                <View style={styles.metricDivider} />
+                <OverviewMetric label="在库" value={currentItems.length} icon="cube" tint={colors.info} />
+              </View>
+            </BlurView>
           </View>
         </View>
 
-        <View style={styles.focusSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>优先序列</Text>
-            <Text style={styles.sectionMeta}>按到期排序</Text>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionTitleGroup}>
+            <View style={styles.sectionSlug} />
+            <Text style={styles.sectionTitle}>临期处理清单</Text>
           </View>
+          <Text style={styles.sectionLabel}>LIST VIEW</Text>
+        </View>
 
-          {focusItems.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <View style={styles.emptyIconShell}>
-                <Ionicons name="camera-outline" size={28} color={colors.primaryDeep} />
+        {focusItems.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <BlurView intensity={10} tint="light" style={styles.emptyBlur}>
+              <View style={styles.emptyCircle}>
+                <Ionicons name="scan-outline" size={32} color={colors.primary} />
               </View>
-              <Text style={styles.emptyTitle}>还没有记录</Text>
-              <Text style={styles.emptyDescription}>拍一张照片，库存会从这里出现。</Text>
-            </View>
-          ) : (
-            <View style={styles.focusList}>
-              {focusItems.map((item) => {
-                const tone = getFocusTone(item);
-
-                return (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
-                    style={styles.focusCard}
-                  >
+              <Text style={styles.emptyText}>通过扫描包装快速入库</Text>
+            </BlurView>
+          </View>
+        ) : (
+          <View style={styles.itemGrid}>
+            {focusItems.map((item, index) => {
+              const tone = getFocusTone(item);
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
+                  style={styles.itemCard}
+                >
+                  <View style={styles.itemImageWrapper}>
                     {item.photoUri ? (
-                      <Image source={{ uri: item.photoUri }} style={styles.focusImage} />
+                      <Image source={{ uri: item.photoUri }} style={styles.itemImage} resizeMode="cover" />
                     ) : (
-                      <View style={styles.focusFallback}>
-                        <Ionicons name="image-outline" size={26} color={colors.textMuted} />
+                      <View style={styles.itemFallback}>
+                        <Ionicons name="file-tray-full-outline" size={30} color={colors.textMuted} />
                       </View>
                     )}
+                    {getExpirePriority(item) <= 1 && (
+                      <BlurView intensity={60} tint="light" style={styles.urgentTag}>
+                        <Text style={styles.urgentText}>紧急</Text>
+                      </BlurView>
+                    )}
+                  </View>
 
-                    <View style={styles.focusBody}>
-                      <View style={styles.focusTopRow}>
-                        <View />
-                        <Ionicons name="chevron-forward-outline" size={16} color={colors.textMuted} />
-                      </View>
-
-                      <View style={styles.focusInfoBlock}>
-                        <Text style={[styles.focusPrimary, { color: tone.text }]} numberOfLines={1}>
-                          {formatRemainingText(item)}
-                        </Text>
-                        <Text style={styles.focusSecondary} numberOfLines={1}>
-                          {item.expiresOn ? `到期日 ${item.expiresOn.slice(0, 10)}` : '未设置日期'}
-                        </Text>
-                      </View>
+                  <View style={styles.itemDetails}>
+                    <View style={styles.itemHeader}>
+                      <Text style={styles.itemLabel}>优先项目 #{index + 1}</Text>
+                      <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
                     </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-        </View>
+                    <View style={styles.itemTextContent}>
+                      <Text style={[styles.itemTitle, { color: tone.text }]} numberOfLines={1}>
+                        {formatRemainingText(item)}
+                      </Text>
+                      <Text style={styles.itemSubtext}>过期日期: {item.expiresOn?.slice(0, 10) || '未设置'}</Text>
+                    </View>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
     </ScreenContainer>
   );
 }
 
-function OverviewMetric({
-  label,
-  value,
-  icon,
-  tint,
-  backgroundColor,
-}: {
-  label: string;
-  value: number;
-  icon: keyof typeof Ionicons.glyphMap;
-  tint: string;
-  backgroundColor: string;
-}) {
+function OverviewMetric({ label, value, icon, tint }: { label: string; value: number; icon: keyof typeof Ionicons.glyphMap; tint: string; }) {
   return (
-    <View style={styles.metricCard}>
-      <View style={[styles.metricIconShell, { backgroundColor }]}>
-        <Ionicons name={icon} size={16} color={tint} />
+    <View style={styles.metric}>
+      <View style={styles.metricIconBox}>
+        <Ionicons name={icon} size={18} color={tint} />
       </View>
-      <Text style={[styles.metricValue, { color: tint }]}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+      <View>
+        <Text style={styles.metricVal}>{value}</Text>
+        <Text style={styles.metricLab}>{label}</Text>
+      </View>
     </View>
   );
 }
 
 function getFocusTone(item: FridgeItem) {
   const days = getDaysUntilExpiration(item);
-
-  if (days === null) {
-    return {
-      text: colors.textSecondary,
-    };
-  }
-
-  if (days <= 1) {
-    return {
-      text: colors.danger,
-    };
-  }
-
-  if (days <= 3) {
-    return {
-      text: colors.warning,
-    };
-  }
-
-  return {
-    text: colors.info,
-  };
+  if (days === null) return { text: colors.textSecondary };
+  if (days <= 1) return { text: colors.danger };
+  if (days <= 3) return { text: colors.warning };
+  return { text: colors.primaryDeep };
 }
 
 function formatRemainingText(item: FridgeItem) {
   const days = getDaysUntilExpiration(item);
-
-  if (days === null) {
-    return '未设日期';
-  }
-
-  if (days < 0) {
-    return `已过期 ${Math.abs(days)} 天`;
-  }
-
-  if (days === 0) {
-    return '今天到期';
-  }
-
-  if (days === 1) {
-    return '明天到期';
-  }
-
-  return `${days} 天后到期`;
+  if (days === null) return '未设置截止日期';
+  if (days < 0) return `已过期 ${Math.abs(days)} 天`;
+  if (days === 0) return '今日到期';
+  if (days === 1) return '明日到期';
+  return `${days} 天后过期`;
 }
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: 136,
-    gap: spacing.xl,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 140,
+    gap: 28,
   },
   topGlow: {
     position: 'absolute',
-    top: -110,
-    right: -90,
-    width: 320,
-    height: 320,
-    borderRadius: 999,
-    backgroundColor: 'rgba(111,214,255,0.12)',
+    top: -50,
+    right: -50,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: 'rgba(31, 122, 140, 0.08)',
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.md,
+    marginTop: 8,
   },
   headerText: {
-    flex: 1,
-    gap: 4,
+    gap: 2,
   },
   kicker: {
-    color: colors.textMuted,
-    fontSize: 11,
+    color: colors.primary,
+    fontSize: 10,
     fontFamily: typography.bodyBold,
-    letterSpacing: 1.4,
+    letterSpacing: 2.5,
+  },
+  brandTitle: {
+    color: '#0F4C5C',
+    fontSize: 32,
+    fontFamily: typography.displayBold,
+    letterSpacing: 0.5,
   },
   title: {
     color: colors.textPrimary,
     fontSize: 34,
     fontFamily: typography.displayHeavy,
+    letterSpacing: -1.2,
+  },
+  syncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  syncDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#34D399',
   },
   subtitle: {
     color: colors.textSecondary,
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: typography.bodyMedium,
+    opacity: 0.8,
   },
   refreshButton: {
-    width: 42,
-    height: 42,
-    borderRadius: radii.pill,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  refreshBlur: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  cardWrapper: {
+    ...shadows.card,
+  },
+  cardBorder: {
+    borderRadius: 24,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.soft,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
   },
-  summaryBlock: {
-    gap: spacing.lg,
+  summaryCard: {
+    padding: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
-  summaryHeader: {
+  summaryTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  summaryText: {
-    flex: 1,
-    gap: 6,
-  },
-  summaryEyebrow: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontFamily: typography.bodyBold,
-    letterSpacing: 1.2,
-  },
-  summaryHeadline: {
-    color: colors.textPrimary,
-    fontSize: 44,
-    lineHeight: 50,
-    fontFamily: typography.displayHeavy,
-    maxWidth: 220,
-  },
-  summaryDescription: {
-    color: colors.textSecondary,
-    lineHeight: 20,
-    maxWidth: 220,
-    fontFamily: typography.bodyMedium,
-  },
-  summaryBadge: {
-    minWidth: 86,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-    borderRadius: radii.lg,
     alignItems: 'center',
-    backgroundColor: '#F3F9FD',
-    borderWidth: 1,
-    borderColor: '#D6E7F2',
+    marginBottom: 32,
+  },
+  summaryInfo: {
+    flex: 1,
     gap: 4,
   },
-  summaryBadgeIconShell: {
-    width: 28,
-    height: 28,
-    borderRadius: 999,
-    backgroundColor: '#E6F2F9',
+  summaryLabel: {
+    fontSize: 11,
+    fontFamily: typography.bodyBold,
+    color: colors.textMuted,
+    letterSpacing: 1,
+  },
+  summaryHeadline: {
+    fontSize: 30,
+    fontFamily: typography.displayBold,
+    color: '#1F7A8C',
+    letterSpacing: 0,
+    lineHeight: 38,
+  },
+  summaryDesc: {
+    fontSize: 13,
+    fontFamily: typography.bodyMedium,
+    color: colors.textSecondary,
+    opacity: 0.8,
+    marginTop: 2,
+  },
+  totalBadge: {
     alignItems: 'center',
     justifyContent: 'center',
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    backgroundColor: 'rgba(31, 122, 140, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(31, 122, 140, 0.1)',
   },
-  summaryBadgeValue: {
-    color: colors.primaryDeep,
-    fontSize: 28,
+  totalValue: {
+    fontSize: 32,
     fontFamily: typography.displayBold,
+    color: colors.primaryDeep,
   },
-  summaryBadgeLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
+  totalLabel: {
+    fontSize: 9,
     fontFamily: typography.bodyBold,
+    color: colors.primary,
+    letterSpacing: 1,
   },
   metricsRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  metricCard: {
-    flex: 1,
-    borderRadius: radii.md,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
     alignItems: 'center',
-    gap: 4,
-    ...shadows.soft,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
-  metricIconShell: {
-    width: 28,
-    height: 28,
-    borderRadius: 999,
+  metric: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 10,
   },
-  metricValue: {
-    color: colors.textPrimary,
-    fontSize: 24,
+  metricDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  metricIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.soft,
+  },
+  metricVal: {
+    fontSize: 20,
     fontFamily: typography.displayBold,
+    color: colors.textPrimary,
   },
-  metricLabel: {
-    color: colors.textMuted,
+  metricLab: {
     fontSize: 12,
     fontFamily: typography.bodyBold,
-  },
-  focusSection: {
-    gap: spacing.md,
+    color: colors.textMuted,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.md,
+    paddingHorizontal: 4,
+  },
+  sectionTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  sectionSlug: {
+    width: 4,
+    height: 18,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
   },
   sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontFamily: typography.bodyBold,
-    letterSpacing: 0.4,
-  },
-  sectionMeta: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontFamily: typography.bodySemibold,
-  },
-  emptyCard: {
-    paddingVertical: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    gap: spacing.sm,
-    ...shadows.soft,
-  },
-  emptyIconShell: {
-    width: 62,
-    height: 62,
-    borderRadius: 999,
-    backgroundColor: colors.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: 20,
+    fontSize: 18,
     fontFamily: typography.displayBold,
+    color: colors.textPrimary,
   },
-  emptyDescription: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 21,
-    maxWidth: 260,
-    fontFamily: typography.bodyMedium,
+  sectionLabel: {
+    fontSize: 9,
+    fontFamily: typography.bodyBold,
+    color: colors.textMuted,
+    letterSpacing: 2,
   },
-  focusList: {
-    gap: spacing.sm,
-  },
-  focusCard: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: spacing.md,
-    padding: 12,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
+  emptyBox: {
+    borderRadius: 24,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.soft,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
-  focusImage: {
-    width: 118,
-    height: 118,
-    borderRadius: radii.md,
+  emptyBlur: {
+    padding: 40,
+    alignItems: 'center',
+    gap: 16,
   },
-  focusFallback: {
-    width: 118,
-    height: 118,
-    borderRadius: radii.md,
+  emptyCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.surfaceTertiary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    fontFamily: typography.bodyMedium,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  itemGrid: {
+    gap: 16,
+  },
+  itemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+    ...shadows.soft,
+  },
+  itemImageWrapper: {
+    width: 90,
+    height: 90,
+    borderRadius: 18,
+    overflow: 'hidden',
     backgroundColor: colors.surfaceSecondary,
   },
-  focusBody: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 6,
-    paddingRight: 2,
+  itemImage: {
+    width: '100%',
+    height: '100%',
   },
-  focusTopRow: {
+  itemFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  urgentTag: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(218, 106, 94, 0.4)',
+  },
+  urgentText: {
+    fontSize: 7,
+    fontFamily: typography.bodyHeavy,
+    color: colors.danger,
+    letterSpacing: 0.5,
+  },
+  itemDetails: {
+    flex: 1,
+    paddingLeft: 16,
+    paddingRight: 4,
+    gap: 4,
+  },
+  itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: spacing.sm,
   },
-  focusInfoBlock: {
-    gap: 6,
-    justifyContent: 'center',
+  itemLabel: {
+    fontSize: 8,
+    fontFamily: typography.bodyBold,
+    color: colors.textMuted,
+    letterSpacing: 0.8,
   },
-  focusPrimary: {
-    fontSize: 24,
-    lineHeight: 28,
+  itemTextContent: {
+    gap: 2,
+  },
+  itemTitle: {
+    fontSize: 22,
     fontFamily: typography.displayBold,
   },
-  focusSecondary: {
-    fontSize: 13,
-    color: colors.textMuted,
+  itemSubtext: {
+    fontSize: 12,
     fontFamily: typography.bodySemibold,
+    color: colors.textMuted,
+    opacity: 0.7,
   },
 });

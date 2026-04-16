@@ -9,6 +9,7 @@
   "scripts": {
     "dev:mobile": "npm run start -w apps/mobile",
     "dev:server": "npm run dev -w apps/server",
-    "dev:admin": "echo \"init admin next\""
+    "dev:admin": "echo \"init admin next\"",
+    "image-server": "npm start -w apps/image-server"
   }
 }

@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, Dimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { ScreenContainer } from '@/src/components/ScreenContainer';
+import { GradientText } from '@/src/components/GradientText';
 import { colors, radii, shadows, spacing } from '@/src/constants/colors';
 import { typography } from '@/src/constants/typography';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { formatLastSyncedAt, useInventoryStore } from '@/src/store/useInventoryStore';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function ProfileTabScreen() {
   const initialized = useInventoryStore((state) => state.initialized);
@@ -33,9 +37,7 @@ export default function ProfileTabScreen() {
   const syncText = formatLastSyncedAt(lastSyncedAt);
 
   useEffect(() => {
-    if (!initialized) {
-      void fetchItems();
-    }
+    if (!initialized) void fetchItems();
   }, [fetchItems, initialized]);
 
   async function handleRefresh() {
@@ -52,13 +54,11 @@ export default function ProfileTabScreen() {
       setFamilyError('请先填写家庭名称');
       return;
     }
-
     setFamilyError('');
     setFamilyMessage('');
-
     try {
       await createHousehold(createName.trim());
-      setFamilyMessage(`已创建 ${createName.trim()}`);
+      setFamilyMessage(`已创建「${createName.trim()}」`);
       setCreateName('');
     } catch {
       setFamilyError('创建失败，请稍后再试');
@@ -68,35 +68,24 @@ export default function ProfileTabScreen() {
   async function handleCheckUpdates() {
     const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
     if (isExpoGo) {
-      Alert.alert('Expo Go 提示', '当前运行在 Expo Go 中，重新扫码进入项目即可拿到最新代码。');
-      return;
-    }
-    if (!Updates.isEnabled) {
-      Alert.alert('提示', '当前环境不支持热更新。');
+      Alert.alert('提示', '当前运行在 Expo Go 环境。');
       return;
     }
     try {
       const update = await Updates.checkForUpdateAsync();
       if (!update.isAvailable) {
-        Alert.alert('提示', '当前已经是最新版本。');
+        Alert.alert('提示', '当前已是最新版本。');
         return;
       }
-      Alert.alert('发现更新', '检测到新的代码包，是否现在安装并重启？', [
-        { text: '稍后', style: 'cancel' },
-        {
-          text: '立即安装',
-          onPress: async () => {
-            try {
-              await Updates.fetchUpdateAsync();
-              await Updates.reloadAsync();
-            } catch {
-              Alert.alert('安装失败', '暂时无法下载更新。');
-            }
-          },
-        },
+      Alert.alert('发现更新', '是否现在安装并重启？', [
+        { text: '取消', style: 'cancel' },
+        { text: '立即安装', onPress: async () => {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }},
       ]);
     } catch {
-      Alert.alert('检查失败', '暂时无法连接更新服务。');
+      Alert.alert('报错', '无法连接更新服务。');
     }
   }
 
@@ -108,356 +97,196 @@ export default function ProfileTabScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} />}
       >
-        <View style={styles.topGlow} />
-
         <View style={styles.header}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{userLabel.slice(0, 1)}</Text>
-          </View>
-          <View style={styles.headerBody}>
-            <Text style={styles.kicker}>我的</Text>
-            <Text style={styles.title}>{userLabel}</Text>
-            <Text style={styles.subtitle}>家庭、同步与运行信息</Text>
-            <Text style={styles.syncText}>{syncText}</Text>
-          </View>
+           <Text style={styles.kicker}>USER PROFILE</Text>
+           <GradientText colors={['#0F4C5C', '#2A9D8F']} style={styles.title}>
+             个人中心
+           </GradientText>
+           <View style={styles.syncRow}>
+              <View style={styles.syncDot} />
+              <Text style={styles.subtitle}>{syncText}</Text>
+           </View>
         </View>
 
-        <View style={styles.metricsRow}>
-          <ProfileMetric value={activeItems.length} label="库存" />
-          <ProfileMetric value={householdMembers.length} label="成员" />
-          <ProfileMetric value={currentHousehold?.inviteCode ?? '--'} label="邀请码" compact />
-        </View>
-
-        <View style={styles.sectionBlock}>
-          <View style={styles.sectionHeaderText}>
-            <Text style={styles.sectionEyebrow}>家庭空间</Text>
-            <Text style={styles.sectionTitle}>当前协作信息</Text>
-          </View>
-          <InfoRow icon="home-outline" label="当前家庭" value={currentHousehold?.name ?? '加载中...'} />
-          <InfoRow icon="people-outline" label="成员人数" value={`${householdMembers.length} 人`} />
-          <InfoRow icon="mail-open-outline" label="邀请码" value={currentHousehold?.inviteCode ?? '暂无'} noBorder />
-        </View>
-
-        <View style={styles.sectionBlock}>
-          <View style={styles.sectionHeaderText}>
-            <Text style={styles.sectionEyebrow}>新建家庭</Text>
-            <Text style={styles.sectionTitle}>建立新的共享空间</Text>
-          </View>
-
-          {familyMessage ? <FeedbackText tone="success" text={familyMessage} /> : null}
-          {familyError ? <FeedbackText tone="error" text={familyError} /> : null}
-
-          <TextInput
-            value={createName}
-            onChangeText={(value) => {
-              setCreateName(value);
-              setFamilyError('');
-            }}
-            placeholder="例如：合租厨房 / 父母家"
-            placeholderTextColor={colors.textMuted}
-            style={styles.input}
-          />
-          <Pressable onPress={() => void handleCreateHousehold()} disabled={isMutating} style={[styles.primaryButton, isMutating && styles.buttonDisabled]}>
-            <Text style={styles.primaryButtonText}>{isMutating ? '创建中...' : '创建家庭空间'}</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.sectionBlock}>
-          <View style={styles.sectionHeaderText}>
-            <Text style={styles.sectionEyebrow}>运行与同步</Text>
-            <Text style={styles.sectionTitle}>当前环境</Text>
-          </View>
-          <Pressable onPress={() => void handleCheckUpdates()} style={styles.actionRow}>
-            <View style={styles.actionLeft}>
-              <Ionicons name="cloud-download-outline" size={18} color={colors.primary} />
-              <Text style={styles.actionText}>检查最新代码</Text>
+        {/* User ID Card */}
+        <View style={styles.cardWrapper}>
+          <View style={styles.cardBorder}>
+            <View style={styles.userCard}>
+               <View style={styles.userTop}>
+                  <View style={styles.avatarBox}>
+                     <Text style={styles.avatarTxt}>{userLabel.slice(0, 1)}</Text>
+                  </View>
+                  <View style={styles.userNameGroup}>
+                     <Text style={styles.userName}>{userLabel}</Text>
+                     <Text style={styles.userMeta}>ID: {user?.id?.slice(-8) || 'FREE_ACCOUNT'}</Text>
+                  </View>
+               </View>
+               
+               <BlurView intensity={20} tint="light" style={styles.userMetrics}>
+                  <UserMetric label="冰箱在库" value={activeItems.length} />
+                  <View style={styles.vDiv} />
+                  <UserMetric label="协作成员" value={householdMembers.length} />
+                  <View style={styles.vDiv} />
+                  <UserMetric label="家庭空间" value={currentHousehold ? 1 : 0} />
+               </BlurView>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </Pressable>
-          <View style={[styles.actionRow, styles.actionRowStatic]}>
-            <View style={styles.actionLeft}>
-              <Ionicons name="hardware-chip-outline" size={18} color={colors.textSecondary} />
-              <Text style={styles.actionText}>当前版本</Text>
-            </View>
-            <Text style={styles.actionValue}>v0.2.0 Arctic</Text>
           </View>
         </View>
 
-        <Pressable
+        {/* Family Management */}
+        <View style={styles.cardWrapper}>
+          <View style={styles.cardBorder}>
+            <View style={styles.glassCard}>
+              <View style={styles.sectionHeader}>
+                 <Text style={styles.sectionTitle}>家庭协作</Text>
+                 <Ionicons name="people-outline" size={18} color={colors.primary} />
+              </View>
+              
+              <View style={styles.infoList}>
+                 <ProfileInfo icon="home-outline" label="当前名称" value={currentHousehold?.name || '--'} />
+                 <ProfileInfo icon="key-outline" label="共享通行码" value={currentHousehold?.inviteCode || '未生成'} />
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.createBlock}>
+                 <Text style={styles.createTitle}>创建新家庭</Text>
+                 {familyMessage ? <Text style={styles.successMsg}>{familyMessage}</Text> : null}
+                 {familyError ? <Text style={styles.errorMsg}>{familyError}</Text> : null}
+                 <View style={styles.inputRow}>
+                    <TextInput
+                       value={createName}
+                       onChangeText={setCreateName}
+                       placeholder="如：杭州老家 / 公司冰箱"
+                       placeholderTextColor={colors.textMuted}
+                       style={styles.input}
+                    />
+                    <Pressable onPress={handleCreateHousehold} disabled={isMutating} style={[styles.inputBtn, isMutating && styles.btnDisabled]}>
+                       <Ionicons name="add" size={24} color="#FFF" />
+                    </Pressable>
+                 </View>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* System & About */}
+        <View style={styles.cardWrapper}>
+          <View style={styles.cardBorder}>
+            <View style={styles.glassCard}>
+               <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>系统状态</Text>
+                  <Ionicons name="settings-outline" size={18} color={colors.primary} />
+               </View>
+               
+               <View style={styles.infoList}>
+                  <Pressable onPress={handleCheckUpdates} style={styles.pressItem}>
+                     <View style={styles.itemLeft}>
+                        <Ionicons name="cloud-download-outline" size={18} color={colors.textSecondary} />
+                        <Text style={styles.itemText}>检查 OTA 更新</Text>
+                     </View>
+                     <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  </Pressable>
+                  <View style={styles.pressItem}>
+                     <View style={styles.itemLeft}>
+                        <Ionicons name="information-circle-outline" size={18} color={colors.textSecondary} />
+                        <Text style={styles.itemText}>当前版本</Text>
+                     </View>
+                     <Text style={styles.versionTxt}>v0.5.2 Arctic Frost</Text>
+                  </View>
+               </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Logout */}
+        <Pressable 
           onPress={() => {
             Alert.alert('退出登录', '确定要退出当前账号吗？', [
               { text: '取消', style: 'cancel' },
-              {
-                text: '退出',
-                style: 'destructive',
-                onPress: () => {
-                  logout();
-                  router.replace('/(auth)/login');
-                },
-              },
+              { text: '退出', style: 'destructive', onPress: () => {
+                logout();
+                router.replace('/(auth)/login');
+              }},
             ]);
           }}
-          style={styles.logoutButton}
+          style={styles.logoutBtn}
         >
-          <Ionicons name="log-out-outline" size={18} color={colors.danger} />
-          <Text style={styles.logoutText}>退出当前账号</Text>
+          <BlurView intensity={20} tint="light" style={styles.logoutBlur}>
+             <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+             <Text style={styles.logoutTxt}>安全退出账号</Text>
+          </BlurView>
         </Pressable>
       </ScrollView>
     </ScreenContainer>
   );
 }
 
-function ProfileMetric({ value, label, compact = false }: { value: string | number; label: string; compact?: boolean }) {
+function UserMetric({ label, value }: any) {
   return (
-    <View style={styles.metricCard}>
-      <Text style={[styles.metricValue, compact && styles.metricValueCompact]} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+    <View style={styles.uMetric}>
+       <Text style={styles.uMetricVal}>{value}</Text>
+       <Text style={styles.uMetricLab}>{label}</Text>
     </View>
   );
 }
 
-function FeedbackText({ tone, text }: { tone: 'success' | 'error'; text: string }) {
-  return <Text style={[styles.feedbackText, tone === 'success' ? styles.feedbackSuccess : styles.feedbackError]}>{text}</Text>;
-}
-
-function InfoRow({
-  icon,
-  label,
-  value,
-  noBorder = false,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-  noBorder?: boolean;
-}) {
+function ProfileInfo({ icon, label, value }: any) {
   return (
-    <View style={[styles.infoRow, noBorder && styles.infoRowNoBorder]}>
-      <View style={styles.actionLeft}>
-        <Ionicons name={icon} size={18} color={colors.primary} />
-        <Text style={styles.infoLabel}>{label}</Text>
-      </View>
-      <Text style={styles.infoValue}>{value}</Text>
+    <View style={styles.pInfo}>
+       <View style={styles.pInfoLeft}>
+          <Ionicons name={icon} size={16} color={colors.textMuted} />
+          <Text style={styles.pInfoLab}>{label}</Text>
+       </View>
+       <Text style={styles.pInfoVal}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: 136,
-    gap: spacing.xl,
-  },
-  topGlow: {
-    position: 'absolute',
-    top: -115,
-    right: -78,
-    width: 300,
-    height: 300,
-    borderRadius: 999,
-    backgroundColor: 'rgba(111,214,255,0.11)',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  avatar: {
-    width: 74,
-    height: 74,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primaryDeep,
-    ...shadows.soft,
-  },
-  avatarText: {
-    color: colors.textOnDark,
-    fontSize: 28,
-    fontFamily: typography.displayBold,
-  },
-  headerBody: {
-    flex: 1,
-    gap: 4,
-  },
-  kicker: {
-    color: colors.textMuted,
-    fontSize: 11,
-    letterSpacing: 1.4,
-    fontFamily: typography.bodyBold,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 32,
-    fontFamily: typography.displayHeavy,
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: typography.bodyMedium,
-  },
-  syncText: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontFamily: typography.bodySemibold,
-  },
-  metricsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  metricCard: {
-    flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radii.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    gap: 2,
-    ...shadows.soft,
-  },
-  metricValue: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontFamily: typography.displayBold,
-  },
-  metricValueCompact: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  metricLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontFamily: typography.bodyBold,
-  },
-  sectionBlock: {
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: 'rgba(255,255,255,0.84)',
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.soft,
-  },
-  sectionHeaderText: {
-    gap: 4,
-  },
-  sectionEyebrow: {
-    color: colors.textMuted,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    fontFamily: typography.bodyBold,
-  },
-  sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontFamily: typography.displayBold,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  infoRowNoBorder: {
-    borderBottomWidth: 0,
-  },
-  infoLabel: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontFamily: typography.bodyBold,
-  },
-  infoValue: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    maxWidth: 150,
-    textAlign: 'right',
-    fontFamily: typography.bodyMedium,
-  },
-  feedbackText: {
-    fontSize: 13,
-    fontFamily: typography.bodyBold,
-  },
-  feedbackSuccess: {
-    color: colors.success,
-  },
-  feedbackError: {
-    color: colors.danger,
-  },
-  input: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 15,
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontFamily: typography.bodyMedium,
-  },
-  primaryButton: {
-    minHeight: 50,
-    backgroundColor: colors.primaryDeep,
-    borderRadius: radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.soft,
-  },
-  primaryButtonText: {
-    color: colors.textOnDark,
-    fontSize: 14,
-    fontFamily: typography.bodyBold,
-  },
-  buttonDisabled: {
-    opacity: 0.55,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-  },
-  actionRowStatic: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    marginTop: spacing.xs,
-  },
-  actionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  actionText: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontFamily: typography.bodyBold,
-  },
-  actionValue: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontFamily: typography.bodyMedium,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: spacing.sm,
-    minHeight: 54,
-    borderRadius: radii.pill,
-    backgroundColor: '#FFF4F2',
-    borderWidth: 1,
-    borderColor: '#F3D3CF',
-  },
-  logoutText: {
-    color: colors.danger,
-    fontSize: 14,
-    fontFamily: typography.bodyBold,
-  },
+  content: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 140, gap: 24 },
+  header: { marginTop: 8, gap: 2 },
+  kicker: { color: colors.primary, fontSize: 10, fontFamily: typography.bodyBold, letterSpacing: 2.5 },
+  title: { color: colors.textPrimary, fontSize: 34, fontFamily: typography.displayBold, letterSpacing: -0.5 },
+  syncRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  syncDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#34D399' },
+  subtitle: { color: colors.textSecondary, fontSize: 12, fontFamily: typography.bodyMedium, opacity: 0.8 },
+  cardWrapper: { ...shadows.card },
+  cardBorder: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.5)' },
+  userCard: { padding: 24, backgroundColor: 'rgba(255, 255, 255, 0.4)', gap: 24 },
+  userTop: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  avatarBox: { width: 64, height: 64, borderRadius: 22, backgroundColor: colors.primaryDeep, alignItems: 'center', justifyContent: 'center', ...shadows.soft },
+  avatarTxt: { color: '#FFF', fontSize: 28, fontFamily: typography.displayBold },
+  userNameGroup: { gap: 2 },
+  userName: { fontSize: 24, fontFamily: typography.displayBold, color: colors.textPrimary },
+  userMeta: { fontSize: 11, fontFamily: typography.bodyBold, color: colors.textMuted, opacity: 0.8 },
+  userMetrics: { flexDirection: 'row', padding: 16, borderRadius: 20, backgroundColor: 'rgba(255, 255, 255, 0.3)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.2)' },
+  uMetric: { flex: 1, alignItems: 'center', gap: 2 },
+  uMetricVal: { fontSize: 20, fontFamily: typography.displayBold, color: colors.textPrimary },
+  uMetricLab: { fontSize: 10, fontFamily: typography.bodyBold, color: colors.textMuted },
+  vDiv: { width: 1, height: 16, backgroundColor: 'rgba(0,0,0,0.05)' },
+  glassCard: { padding: 20, backgroundColor: 'rgba(255, 255, 255, 0.4)', gap: 16 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4 },
+  sectionTitle: { fontSize: 18, fontFamily: typography.displayBold, color: colors.textPrimary },
+  infoList: { gap: 12 },
+  pInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  pInfoLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  pInfoLab: { fontSize: 14, fontFamily: typography.bodyBold, color: colors.textSecondary },
+  pInfoVal: { fontSize: 14, fontFamily: typography.bodyBold, color: colors.textPrimary },
+  divider: { height: 1, backgroundColor: 'rgba(0,0,0,0.05)', marginHorizontal: 4 },
+  createBlock: { gap: 12 },
+  createTitle: { fontSize: 14, fontFamily: typography.bodyBold, color: colors.textMuted, paddingHorizontal: 4 },
+  inputRow: { flexDirection: 'row', gap: 10 },
+  input: { flex: 1, height: 50, borderRadius: 25, backgroundColor: 'rgba(255, 255, 255, 0.6)', paddingHorizontal: 20, fontSize: 14, fontFamily: typography.bodyMedium, borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
+  inputBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: colors.primaryDeep, alignItems: 'center', justifyContent: 'center', ...shadows.soft },
+  btnDisabled: { opacity: 0.5 },
+  successMsg: { fontSize: 12, color: colors.success, paddingHorizontal: 4, fontFamily: typography.bodyBold },
+  errorMsg: { fontSize: 12, color: colors.danger, paddingHorizontal: 4, fontFamily: typography.bodyBold },
+  pressItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4 },
+  itemLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  itemText: { fontSize: 14, fontFamily: typography.bodyBold, color: colors.textPrimary },
+  versionTxt: { fontSize: 12, fontFamily: typography.bodyMedium, color: colors.textMuted },
+  logoutBtn: { borderRadius: 25, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(218, 106, 94, 0.3)', marginTop: 8 },
+  logoutBlur: { flexDirection: 'row', height: 50, alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: 'rgba(248, 113, 113, 0.05)' },
+  logoutTxt: { fontSize: 14, fontFamily: typography.bodyBold, color: colors.danger },
 });
