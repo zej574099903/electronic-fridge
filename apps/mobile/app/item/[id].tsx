@@ -7,6 +7,8 @@ import { ScreenContainer } from '@/src/components/ScreenContainer';
 import { GradientText } from '@/src/components/GradientText';
 import { colors, radii, shadows, spacing } from '@/src/constants/colors';
 import { typography } from '@/src/constants/typography';
+import { RemoteImage } from '@/src/components/RemoteImage';
+import { getImagePath, deleteRemoteImage } from '@/src/constants/network';
 import { formatStorageSpaceLabel, getDaysUntilExpiration } from '@/src/lib/expiry';
 import { CreateFridgeItemInput, useInventoryStore } from '@/src/store/useInventoryStore';
 import { ItemCategory, ItemStatus, StorageSpace } from '@/src/types/item';
@@ -120,6 +122,13 @@ export default function ItemDetailScreen() {
           try {
             await updateItemStatus(item.id, status);
             setFeedbackMessage(`已更新状态：${actionText}`);
+            
+            // 物理清理：如果处理完了 (吃掉或丢弃)，则删除服务器上的照片
+            if (status === 'eaten' || status === 'discarded') {
+              if (item.photoUri) {
+                void deleteRemoteImage(item.photoUri);
+              }
+            }
           } catch {
             setEditError('更新失败，请稍后再试');
           }
@@ -158,7 +167,14 @@ export default function ItemDetailScreen() {
         onPress: async () => {
           clearError();
           try {
+            const photoToDelete = item.photoUri;
             await removeItem(item.id);
+            
+            // 物理清理：删除记录时同步删除服务器照片
+            if (photoToDelete) {
+              void deleteRemoteImage(photoToDelete);
+            }
+            
             router.replace('/(tabs)/inventory');
           } catch {
             setEditError('删除失败，请稍后再试');
@@ -178,12 +194,6 @@ export default function ItemDetailScreen() {
               <Ionicons name="chevron-back" size={18} color={colors.primary} />
             </BlurView>
           </Pressable>
-          <View style={styles.headerTitleGroup}>
-            <Text style={styles.kicker}>ITEM DETAILS</Text>
-            <GradientText colors={['#0F4C5C', '#2A9D8F']} style={styles.title}>
-              {item?.name ?? '食材详情'}
-            </GradientText>
-          </View>
         </View>
 
         {!item ? (
@@ -245,53 +255,6 @@ export default function ItemDetailScreen() {
               </View>
             </View>
 
-            {/* Info Section */}
-            <View style={styles.cardWrapper}>
-              <View style={styles.cardBorder}>
-                <View style={styles.glassCard}>
-                  <View style={styles.sectionTop}>
-                    <Text style={styles.sectionTitle}>详细配置</Text>
-                    <Pressable onPress={() => setIsEditing(!isEditing)} style={styles.editBtn}>
-                      <Text style={styles.editBtnText}>{isEditing ? '取消' : '编辑'}</Text>
-                    </Pressable>
-                  </View>
-
-                  {isEditing ? (
-                    <View style={styles.editPanel}>
-                      <TextInput 
-                        style={styles.input} 
-                        value={editDraft.name} 
-                        onChangeText={v => updateEditDraft('name', v)}
-                        placeholder="名称"
-                      />
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                        {quickAddCategoryOptions.map(o => (
-                          <Pressable 
-                            key={o.value} 
-                            onPress={() => updateEditDraft('category', o.value)}
-                            style={[styles.chip, editDraft.category === o.value && styles.chipActive]}
-                          >
-                            <Text style={[styles.chipText, editDraft.category === o.value && styles.chipTextActive]}>{o.label}</Text>
-                          </Pressable>
-                        ))}
-                      </ScrollView>
-                      <View style={styles.saveBlock}>
-                        <Pressable onPress={() => void handleSaveEdit()} style={styles.saveBtn}>
-                          <Text style={styles.saveBtnText}>保存修改</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={styles.infoGrid}>
-                      <InfoItem label="形态" value={categoryLabelMap[item.category]} icon="apps-outline" />
-                      <InfoItem label="位置" value={formatStorageSpaceLabel(item.storageSpace)} icon="location-outline" />
-                      <InfoItem label="存量" value={item.quantity ? `${item.quantity}${item.quantityUnit ?? ''}` : '未计'} icon="layers-outline" />
-                      <InfoItem label="备注" value={item.note || '无备注'} icon="document-text-outline" full />
-                    </View>
-                  )}
-                </View>
-              </View>
-            </View>
           </>
         )}
       </ScrollView>
@@ -308,7 +271,10 @@ function HeroDecisionCard({ itemName, photoUri, status, expireOn, daysUntilExpir
           <View style={styles.heroTop}>
              <View style={styles.heroImageContainer}>
                 {photoUri ? (
-                  <Image source={{ uri: photoUri }} style={styles.heroImage} />
+                  <RemoteImage 
+                    photoUri={photoUri} 
+                    style={styles.heroImage} 
+                  />
                 ) : (
                   <View style={styles.heroFallback}>
                     <Ionicons name="fast-food-outline" size={40} color={colors.textMuted} />

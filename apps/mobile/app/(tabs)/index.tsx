@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, Dimensions } from 'react-native';
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, Dimensions, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,9 +9,12 @@ import { ScreenContainer } from '@/src/components/ScreenContainer';
 import { GradientText } from '@/src/components/GradientText';
 import { colors, radii, shadows, spacing } from '@/src/constants/colors';
 import { typography } from '@/src/constants/typography';
+import { RemoteImage } from '@/src/components/RemoteImage';
 import { getDaysUntilExpiration, getExpirePriority } from '@/src/lib/expiry';
 import { formatLastSyncedAt, useInventoryStore } from '@/src/store/useInventoryStore';
 import { FridgeItem } from '@/src/types/item';
+import { SkeletonCard } from '@/src/components/SkeletonCard';
+import { useRef } from 'react';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -21,6 +24,33 @@ export default function HomeTabScreen() {
   const lastSyncedAt = useInventoryStore((state) => state.lastSyncedAt);
   const fetchItems = useInventoryStore((state) => state.fetchItems);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // 刷新按钮动画控制器
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isRefreshing) {
+      Animated.loop(
+        Animated.timing(rotateAnim, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      Animated.timing(rotateAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isRefreshing, rotateAnim]);
+
+  const rotation = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   const currentItems = useMemo(() => {
     return [...items]
@@ -36,7 +66,15 @@ export default function HomeTabScreen() {
 
   const urgentItems = useMemo(() => currentItems.filter((item) => getExpirePriority(item) <= 1), [currentItems]);
   const safeItems = useMemo(() => currentItems.filter((item) => getExpirePriority(item) > 3), [currentItems]);
-  const focusItems = currentItems.slice(0, 3);
+  
+  // 优化显示逻辑：如果存在临期物品，则展示全部临期物品（最多展示6个，防止列表过长）；否则展示最新入库的3个
+  const focusItems = useMemo(() => {
+    if (urgentItems.length > 0) {
+      return urgentItems.slice(0, 6);
+    }
+    return currentItems.slice(0, 3);
+  }, [urgentItems, currentItems]);
+  
   const syncText = formatLastSyncedAt(lastSyncedAt);
 
   useEffect(() => {
@@ -92,7 +130,9 @@ export default function HomeTabScreen() {
           </View>
           <Pressable onPress={() => void handleRefresh()} style={styles.refreshButton}>
             <BlurView intensity={20} tint="light" style={styles.refreshBlur}>
-              <Ionicons name="refresh-outline" size={18} color={colors.primary} />
+              <Animated.View style={{ transform: [{ rotate: rotation }] }}>
+                <Ionicons name="refresh-outline" size={18} color={colors.primary} />
+              </Animated.View>
             </BlurView>
           </Pressable>
         </View>
@@ -134,7 +174,14 @@ export default function HomeTabScreen() {
           <Text style={styles.sectionLabel}>LIST VIEW</Text>
         </View>
 
-        {focusItems.length === 0 ? (
+        {/* 数据加载状态展示 */}
+        {!initialized || (isRefreshing && currentItems.length === 0) ? (
+          <View style={styles.itemGrid}>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </View>
+        ) : focusItems.length === 0 ? (
           <View style={styles.emptyBox}>
             <BlurView intensity={10} tint="light" style={styles.emptyBlur}>
               <View style={styles.emptyCircle}>
@@ -155,7 +202,11 @@ export default function HomeTabScreen() {
                 >
                   <View style={styles.itemImageWrapper}>
                     {item.photoUri ? (
-                      <Image source={{ uri: item.photoUri }} style={styles.itemImage} resizeMode="cover" />
+                      <RemoteImage 
+                        photoUri={item.photoUri} 
+                        style={styles.itemImage} 
+                        resizeMode="cover" 
+                      />
                     ) : (
                       <View style={styles.itemFallback}>
                         <Ionicons name="file-tray-full-outline" size={30} color={colors.textMuted} />

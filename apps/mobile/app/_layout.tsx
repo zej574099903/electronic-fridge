@@ -6,6 +6,7 @@ import { Nunito_400Regular, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraB
 import { MPLUSRounded1c_400Regular, MPLUSRounded1c_700Bold, MPLUSRounded1c_800ExtraBold } from '@expo-google-fonts/m-plus-rounded-1c';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { colors } from '@/src/constants/colors';
+import { initializeDiscovery } from '@/src/utils/discovery';
 
 export default function RootLayout() {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -24,8 +25,11 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
+    // 异步初始化网络发现逻辑
+    initializeDiscovery();
+
     // Add a small delay for state hydration
-    const timer = setTimeout(() => setIsReady(true), 100);
+    const timer = setTimeout(() => setIsReady(true), 500); // 稍微延长一点让发现逻辑有时间跑完
     return () => clearTimeout(timer);
   }, []);
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Dimensions } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Dimensions, TouchableOpacity } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -9,7 +9,8 @@ import { GradientText } from '@/src/components/GradientText';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { colors, radii, shadows, spacing } from '@/src/constants/colors';
 import { typography } from '@/src/constants/typography';
-import { UPLOAD_ENDPOINT, STATIC_IMAGES_BASE_URL } from '@/src/constants/network';
+import { RemoteImage } from '@/src/components/RemoteImage';
+import { getUploadEndpoint, getImagePath } from '@/src/constants/network';
 import { CreateFridgeItemInput, useInventoryStore } from '@/src/store/useInventoryStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -32,7 +33,7 @@ export default function IntakeTabScreen() {
   const clearError = useInventoryStore((state) => state.clearError);
 
   const [draft, setDraft] = useState<CreateFridgeItemInput>({
-    name: '未命名食材',
+    name: '',
     photoUri: '',
     category: 'ingredient',
     storageSpace: 'chilled',
@@ -99,7 +100,7 @@ export default function IntakeTabScreen() {
       } as any);
 
       // 3. Upload to your computer
-      const response = await fetch(UPLOAD_ENDPOINT, {
+      const response = await fetch(getUploadEndpoint(), {
         method: 'POST',
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -110,8 +111,8 @@ export default function IntakeTabScreen() {
       if (!response.ok) throw new Error('Upload failed');
 
       const result = await response.json();
-      // Return the full URL for viewing
-      return STATIC_IMAGES_BASE_URL + result.url;
+      // Important: Return only the filename to keep it dynamic!
+      return result.filename;
     } catch (error) {
       console.error('[Upload Error]', error);
       return null;
@@ -143,13 +144,13 @@ export default function IntakeTabScreen() {
       // Step B: Save with the new computer URL
       await addItem({ 
         ...draft, 
-        name: draft.name.trim() || '未命名食材',
+        name: draft.name.trim() || '',
         photoUri: cloudUrl // Use the URL on your computer
       });
 
       setSuccessMessage('已存入您的电脑并加入库存。');
       setDraft({
-        name: '未命名食材',
+        name: '',
         photoUri: '',
         category: 'ingredient',
         storageSpace: 'chilled',
@@ -199,9 +200,17 @@ export default function IntakeTabScreen() {
               {successMessage ? <FeedbackBanner tone="success" text={successMessage} /> : null}
               {formError ? <FeedbackBanner tone="error" text={formError} /> : null}
 
-              <Pressable onPress={handlePhotoCapture} style={styles.previewContainer}>
+              <View style={styles.photoBox}>
                 {draft.photoUri ? (
-                  <Image source={{ uri: draft.photoUri }} style={styles.previewImage} />
+                  <View style={styles.previewContainer}>
+                    <RemoteImage 
+                      photoUri={draft.photoUri} 
+                      style={styles.previewImage} 
+                    />
+                    <TouchableOpacity style={styles.retakeButton} onPress={handlePhotoCapture}>
+                      <Ionicons name="camera-reverse" size={20} color="#FFF" />
+                    </TouchableOpacity>
+                  </View>
                 ) : (
                   <View style={styles.placeholderBox}>
                     <View style={styles.placeholderIcon}>
@@ -211,7 +220,7 @@ export default function IntakeTabScreen() {
                     <Text style={styles.placeholderDesc}>照片可以帮你更快识别冰箱深处的物品</Text>
                   </View>
                 )}
-              </Pressable>
+              </View>
 
               <Pressable onPress={handlePhotoCapture} style={styles.captureBtn}>
                 <Ionicons name="scan-outline" size={18} color="#FFF" />

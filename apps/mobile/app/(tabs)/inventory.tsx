@@ -9,6 +9,8 @@ import { ScreenContainer } from '@/src/components/ScreenContainer';
 import { GradientText } from '@/src/components/GradientText';
 import { colors, radii, shadows, spacing } from '@/src/constants/colors';
 import { typography } from '@/src/constants/typography';
+import { RemoteImage } from '@/src/components/RemoteImage';
+import { getImagePath, deleteRemoteImage } from '@/src/constants/network';
 import { getDaysUntilExpiration, getExpirePriority } from '@/src/lib/expiry';
 import { formatLastSyncedAt, useInventoryStore } from '@/src/store/useInventoryStore';
 import { FridgeItem, ItemStatus } from '@/src/types/item';
@@ -21,6 +23,15 @@ const statusLabelMap: Record<ItemStatus, string> = {
   discarded: '已丢弃',
   expired: '已过期',
 };
+
+function formatRemainingText(item: FridgeItem) {
+  const days = getDaysUntilExpiration(item);
+  if (days === null) return '日期待补';
+  if (days < 0) return `已过期 ${Math.abs(days)} 天`;
+  if (days === 0) return '今日到期';
+  if (days === 1) return '明日到期';
+  return `${days} 天后过期`;
+}
 
 export default function InventoryTabScreen() {
   const params = useLocalSearchParams<{ itemId?: string }>();
@@ -72,7 +83,13 @@ export default function InventoryTabScreen() {
         text: '确认',
         onPress: async () => {
           try {
+            const currentItem = items.find(i => i.id === id);
             await updateItemStatus(id, status);
+            
+            // 物理清理：处理完了就删掉照片
+            if ((status === 'eaten' || status === 'discarded') && currentItem?.photoUri) {
+              void deleteRemoteImage(currentItem.photoUri);
+            }
           } catch {
             Alert.alert('更新失败', '请稍后再试');
           }
@@ -89,7 +106,13 @@ export default function InventoryTabScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
+            const currentItem = items.find(i => i.id === id);
             await removeItem(id);
+            
+            // 物理清理
+            if (currentItem?.photoUri) {
+              void deleteRemoteImage(currentItem.photoUri);
+            }
           } catch {
             Alert.alert('删除失败', '请稍后再试');
           }
@@ -181,7 +204,11 @@ export default function InventoryTabScreen() {
                   >
                     <View style={styles.itemImageWrapper}>
                       {item.photoUri ? (
-                        <Image source={{ uri: item.photoUri }} style={styles.itemImage} resizeMode="cover" />
+                        <RemoteImage 
+                          photoUri={item.photoUri} 
+                          style={styles.itemImage} 
+                          resizeMode="cover" 
+                        />
                       ) : (
                         <View style={styles.itemFallback}>
                           <Ionicons name="file-tray-full-outline" size={24} color={colors.textMuted} />
@@ -200,9 +227,9 @@ export default function InventoryTabScreen() {
                         <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
                       </View>
                       <View style={styles.itemTextContent}>
-                        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                        <Text style={[styles.itemSubtext, { color: toneColor }]}>
-                          {formatRemainingText(item)}
+                        <Text style={styles.itemName} numberOfLines={1}>{formatRemainingText(item)}</Text>
+                        <Text style={styles.itemSubtext}>
+                          过期日期: {item.expiresOn?.slice(0, 10) || '未设定'}
                         </Text>
                       </View>
                     </View>
@@ -265,14 +292,6 @@ function MiniAction({ label, icon, color, onPress }: { label: string; icon: keyo
   );
 }
 
-function formatRemainingText(item: FridgeItem) {
-  const days = getDaysUntilExpiration(item);
-  if (days === null) return '未设置期限';
-  if (days < 0) return `已过期 ${Math.abs(days)} 天`;
-  if (days === 0) return '今日到期';
-  if (days === 1) return '明日到期';
-  return `${days} 天后到期`;
-}
 
 const styles = StyleSheet.create({
   content: {
