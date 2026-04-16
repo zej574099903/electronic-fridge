@@ -1,40 +1,39 @@
-import { useEffect, useState } from 'react';
-import { Link, router } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
+import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/src/components/ScreenContainer';
-import { SectionCard } from '@/src/components/SectionCard';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '@/src/constants/colors';
-import { buildInventoryTasks, getExpirePriority } from '@/src/lib/expiry';
-import { formatLastSyncedAt, getInventorySummary, useInventoryStore } from '@/src/store/useInventoryStore';
+import { colors, radii, shadows, spacing } from '@/src/constants/colors';
+import { typography } from '@/src/constants/typography';
+import { getDaysUntilExpiration, getExpirePriority } from '@/src/lib/expiry';
+import { formatLastSyncedAt, useInventoryStore } from '@/src/store/useInventoryStore';
+import { FridgeItem } from '@/src/types/item';
 
 export default function HomeTabScreen() {
   const items = useInventoryStore((state) => state.items);
   const initialized = useInventoryStore((state) => state.initialized);
-  const isLoading = useInventoryStore((state) => state.isLoading);
-  const error = useInventoryStore((state) => state.error);
   const lastSyncedAt = useInventoryStore((state) => state.lastSyncedAt);
   const fetchItems = useInventoryStore((state) => state.fetchItems);
-
-  const activeItems = items.filter((item) => item.status === 'active');
-  const summary = getInventorySummary(items);
-  const todayTasks = buildInventoryTasks(items);
-  const prioritizedItems = [...activeItems].sort((left, right) => getExpirePriority(left) - getExpirePriority(right)).slice(0, 6);
-  const recentItems = [...items]
-    .sort((left, right) => new Date(right.createdAt ?? 0).getTime() - new Date(left.createdAt ?? 0).getTime())
-    .slice(0, 5);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const insets = useSafeAreaInsets();
-  const syncText = formatLastSyncedAt(lastSyncedAt);
 
-  // Health Calculation
-  const healthPercent = activeItems.length === 0 ? 100 : Math.max(0, Math.round(((activeItems.length - summary.urgentCount) / activeItems.length) * 100));
-  const healthLevel = healthPercent > 80 ? '极佳' : healthPercent > 50 ? '优良' : '注意';
-  const healthColor = healthPercent > 80 ? colors.success : healthPercent > 50 ? colors.secondary : colors.danger;
+  const currentItems = useMemo(() => {
+    return [...items]
+      .filter((item) => item.status === 'active')
+      .sort((left, right) => {
+        const priorityDelta = getExpirePriority(left) - getExpirePriority(right);
+        if (priorityDelta !== 0) {
+          return priorityDelta;
+        }
+
+        return new Date(right.updatedAt ?? 0).getTime() - new Date(left.updatedAt ?? 0).getTime();
+      });
+  }, [items]);
+
+  const urgentItems = useMemo(() => currentItems.filter((item) => getExpirePriority(item) <= 1), [currentItems]);
+  const safeItems = useMemo(() => currentItems.filter((item) => getExpirePriority(item) > 3), [currentItems]);
+  const focusItems = currentItems.slice(0, 3);
+  const syncText = formatLastSyncedAt(lastSyncedAt);
 
   useEffect(() => {
     if (!initialized) {
@@ -44,7 +43,6 @@ export default function HomeTabScreen() {
 
   async function handleRefresh() {
     setIsRefreshing(true);
-
     try {
       await fetchItems();
     } finally {
@@ -52,459 +50,447 @@ export default function HomeTabScreen() {
     }
   }
 
+  const headline =
+    currentItems.length === 0
+      ? '开始记录'
+      : urgentItems.length > 0
+        ? '先处理'
+        : '状态稳定';
+
+  const description =
+    currentItems.length === 0
+      ? '从一件开始。'
+      : urgentItems.length > 0
+        ? `${urgentItems.length} 件临近到期`
+        : `${currentItems.length} 件在库`;
+
   return (
-    <ScreenContainer edges={['left', 'right']} style={{ backgroundColor: 'transparent' }}>
-      <StatusBar style="dark" translucent />
-
-      {/* Arctic Realm Background Texture v3 (Pure Ice Light) */}
-      <View style={StyleSheet.absoluteFill}>
-        <Image
-          source={require('../../assets/branding/arctic_bg_v3_light.png')}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-          blurRadius={10}
-        />
-
-        {/* Soft Light Overlay for Text Readability */}
-        <LinearGradient
-          colors={['rgba(255,255,255,0.4)', 'rgba(255,255,255,0.1)', 'rgba(255,255,255,0.6)']}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
-
+    <ScreenContainer>
+      <StatusBar style="dark" />
       <ScrollView
-        contentContainerStyle={[styles.content, { backgroundColor: 'transparent' }]}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor="#fff" />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} />}
       >
-        {/* Arctic Fresh Dashboard Header */}
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.2)']}
-          style={styles.dashboardHero}
-        >
-          <View style={[styles.headerTop, { paddingTop: insets.top + 8 }]}>
-            <View>
-              <Text style={styles.greeting}>极智保鲜</Text>
-              <Text style={styles.syncTextSmall}>已同步 {syncText}</Text>
-            </View>
-            <View style={styles.headerRight}>
-              <Ionicons name="snow-outline" size={24} color="rgba(255,255,255,0.8)" />
-            </View>
-          </View>
+        <View style={styles.topGlow} />
 
-          <View style={styles.healthHero}>
-            <View style={styles.gaugeGlow}>
-              <View style={[styles.healthGaugev2, { borderColor: 'rgba(255,255,255,0.3)', borderTopColor: healthColor, borderRightColor: healthColor }]}>
-                <LinearGradient
-                  colors={['rgba(255,255,255,0.2)', 'transparent']}
-                  style={styles.gaugeGlassOverlay}
-                />
-                <Text style={styles.healthValueBigLight}>{healthPercent}%</Text>
-                <Text style={styles.healthUnitv2Light}>新鲜状态</Text>
+        <View style={styles.header}>
+          <View style={styles.headerText}>
+            <Text style={styles.kicker}>总览</Text>
+            <Text style={styles.title}>冰箱</Text>
+            <Text style={styles.subtitle}>{syncText}</Text>
+          </View>
+          <Pressable onPress={() => void handleRefresh()} style={styles.refreshButton}>
+            <Ionicons name="refresh-outline" size={18} color={colors.primaryDeep} />
+          </Pressable>
+        </View>
+
+        <View style={styles.summaryBlock}>
+          <View style={styles.summaryHeader}>
+            <View style={styles.summaryText}>
+              <Text style={styles.summaryEyebrow}>状态</Text>
+              <Text style={styles.summaryHeadline}>{headline}</Text>
+              <Text style={styles.summaryDescription}>{description}</Text>
+            </View>
+            <View style={styles.summaryBadge}>
+              <View style={styles.summaryBadgeIconShell}>
+                <Ionicons name="apps-outline" size={15} color={colors.primaryDeep} />
               </View>
-              <View style={[styles.gaugeInnerRim, { borderColor: 'rgba(255,255,255,0.2)' }]} />
-            </View>
-            <View style={styles.healthTextCenter}>
-              <Text style={styles.healthStatusLabelLight}>冰箱环境：{healthLevel}</Text>
-              <Text style={styles.healthSubLabelLight}>{activeItems.length} 件库存正在智能管理中</Text>
+              <Text style={styles.summaryBadgeValue}>{currentItems.length}</Text>
+              <Text style={styles.summaryBadgeLabel}>总数</Text>
             </View>
           </View>
 
-          <View style={styles.quickStatRow}>
-            <BlurView intensity={80} tint="light" style={styles.miniStatCard}>
-              <Ionicons name="alert-circle" size={18} color={colors.warning} />
-              <Text style={styles.miniStatValue}>{summary.urgentCount}</Text>
-              <Text style={styles.miniStatTitle}>今日临期</Text>
-            </BlurView>
-            <BlurView intensity={80} tint="light" style={styles.miniStatCard}>
-              <Ionicons name="restaurant" size={18} color={colors.secondary} />
-              <Text style={styles.miniStatValue}>{summary.leftoverCount}</Text>
-              <Text style={styles.miniStatTitle}>剩菜提醒</Text>
-            </BlurView>
-            <BlurView intensity={80} tint="light" style={styles.miniStatCard}>
-              <Ionicons name="cube" size={18} color="#fff" />
-              <Text style={styles.miniStatValue}>{activeItems.length}</Text>
-              <Text style={styles.miniStatTitle}>总共物品</Text>
-            </BlurView>
+          <View style={styles.metricsRow}>
+            <OverviewMetric label="临期" value={urgentItems.length} icon="alert-circle-outline" tint={colors.danger} backgroundColor="#FFF2F0" />
+            <OverviewMetric label="安全" value={safeItems.length} icon="shield-checkmark-outline" tint={colors.success} backgroundColor="#EFFAF6" />
+            <OverviewMetric label="在库" value={currentItems.length} icon="cube-outline" tint={colors.info} backgroundColor="#EEF6FC" />
           </View>
-        </LinearGradient>
+        </View>
 
-        {/* Fridge Overview Analysis */}
-        <BlurView intensity={80} tint="light" style={styles.glassSection}>
-          <Text style={styles.sectionTitleGlass}>冰箱概览</Text>
-          <View style={styles.overviewGridGlass}>
-            <View style={styles.overviewCardGlass}>
-              <Text style={styles.overviewValueGlass}>{activeItems.length - summary.urgentCount}</Text>
-              <Text style={styles.overviewLabelGlass}>状态良好</Text>
-              <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
-            </View>
-            <View style={styles.overviewCardGlass}>
-              <Text style={styles.overviewValueGlass}>{summary.urgentCount}</Text>
-              <Text style={styles.overviewLabelGlass}>需要关注</Text>
-              <View style={[styles.statusDot, { backgroundColor: colors.warning }]} />
-            </View>
-            <View style={[styles.overviewCardGlass, { borderRightWidth: 0 }]}>
-              <Text style={styles.overviewValueGlass}>{items.filter(i => i.status === 'expired').length}</Text>
-              <Text style={styles.overviewLabelGlass}>产生浪费</Text>
-              <View style={[styles.statusDot, { backgroundColor: colors.danger }]} />
-            </View>
-          </View>
-          <View style={styles.insightPlateGlass}>
-            <Ionicons name="bulb-outline" size={18} color={colors.secondary} />
-            <Text style={styles.insightTextGlass}>
-              {summary.urgentCount > 0
-                ? `本周有 ${summary.urgentCount} 件食材即将过期，建议优先处理。`
-                : "目前冰箱环境健康，继续保持良好的采买习惯！"}
-            </Text>
-          </View>
-        </BlurView>
-
-        {/* Eat Now Priority Action List */}
-        <View style={styles.section}>
+        <View style={styles.focusSection}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitleGlass}>优先食用清单</Text>
-            <Link href="/(tabs)/inventory" style={styles.seeAllLinkGlass}>查看全部库存 ›</Link>
+            <Text style={styles.sectionTitle}>优先序列</Text>
+            <Text style={styles.sectionMeta}>按到期排序</Text>
           </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.priorityList}
-          >
-            {prioritizedItems.map((item) => (
-              <Pressable
-                key={item.id}
-                onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
-                style={styles.priorityCard}
-              >
-                <BlurView intensity={80} tint="light" style={styles.priorityCardGlass}>
-                  <LinearGradient
-                    colors={getExpirePriority(item) < 2 ? ['rgba(239,68,68,0.2)', 'rgba(185,28,28,0.1)'] : ['rgba(59,130,246,0.2)', 'rgba(29,78,216,0.1)']}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  <Ionicons
-                    name={getExpirePriority(item) < 2 ? "time" : "fast-food"}
-                    size={28}
-                    color="#fff"
-                    style={styles.priorityIcon}
-                  />
-                  <Text style={styles.priorityName} numberOfLines={1}>{item.name}</Text>
-                  <Text style={styles.priorityMeta}>{item.expireAt ? `${item.expireAt} 过期` : '未设置日期'}</Text>
-                </BlurView>
-              </Pressable>
-            ))}
-            <Pressable
-              onPress={() => router.push('/(tabs)/inventory')}
-              style={styles.addPriorityCardGlass}
-            >
-              <Ionicons name="add-circle-outline" size={32} color="rgba(255,255,255,0.6)" />
-              <Text style={styles.addPriorityTextGlass}>新增库存</Text>
-            </Pressable>
-          </ScrollView>
+
+          {focusItems.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <View style={styles.emptyIconShell}>
+                <Ionicons name="camera-outline" size={28} color={colors.primaryDeep} />
+              </View>
+              <Text style={styles.emptyTitle}>还没有记录</Text>
+              <Text style={styles.emptyDescription}>拍一张照片，库存会从这里出现。</Text>
+            </View>
+          ) : (
+            <View style={styles.focusList}>
+              {focusItems.map((item) => {
+                const tone = getFocusTone(item);
+
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
+                    style={styles.focusCard}
+                  >
+                    {item.photoUri ? (
+                      <Image source={{ uri: item.photoUri }} style={styles.focusImage} />
+                    ) : (
+                      <View style={styles.focusFallback}>
+                        <Ionicons name="image-outline" size={26} color={colors.textMuted} />
+                      </View>
+                    )}
+
+                    <View style={styles.focusBody}>
+                      <View style={styles.focusTopRow}>
+                        <View />
+                        <Ionicons name="chevron-forward-outline" size={16} color={colors.textMuted} />
+                      </View>
+
+                      <View style={styles.focusInfoBlock}>
+                        <Text style={[styles.focusPrimary, { color: tone.text }]} numberOfLines={1}>
+                          {formatRemainingText(item)}
+                        </Text>
+                        <Text style={styles.focusSecondary} numberOfLines={1}>
+                          {item.expiresOn ? `到期日 ${item.expiresOn.slice(0, 10)}` : '未设置日期'}
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
         </View>
       </ScrollView>
     </ScreenContainer>
   );
 }
 
+function OverviewMetric({
+  label,
+  value,
+  icon,
+  tint,
+  backgroundColor,
+}: {
+  label: string;
+  value: number;
+  icon: keyof typeof Ionicons.glyphMap;
+  tint: string;
+  backgroundColor: string;
+}) {
+  return (
+    <View style={styles.metricCard}>
+      <View style={[styles.metricIconShell, { backgroundColor }]}>
+        <Ionicons name={icon} size={16} color={tint} />
+      </View>
+      <Text style={[styles.metricValue, { color: tint }]}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function getFocusTone(item: FridgeItem) {
+  const days = getDaysUntilExpiration(item);
+
+  if (days === null) {
+    return {
+      text: colors.textSecondary,
+    };
+  }
+
+  if (days <= 1) {
+    return {
+      text: colors.danger,
+    };
+  }
+
+  if (days <= 3) {
+    return {
+      text: colors.warning,
+    };
+  }
+
+  return {
+    text: colors.info,
+  };
+}
+
+function formatRemainingText(item: FridgeItem) {
+  const days = getDaysUntilExpiration(item);
+
+  if (days === null) {
+    return '未设日期';
+  }
+
+  if (days < 0) {
+    return `已过期 ${Math.abs(days)} 天`;
+  }
+
+  if (days === 0) {
+    return '今天到期';
+  }
+
+  if (days === 1) {
+    return '明天到期';
+  }
+
+  return `${days} 天后到期`;
+}
+
 const styles = StyleSheet.create({
   content: {
-    paddingBottom: 120,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 136,
+    gap: spacing.xl,
   },
-  lightRay: {
+  topGlow: {
     position: 'absolute',
-    opacity: 0.5,
+    top: -110,
+    right: -90,
+    width: 320,
+    height: 320,
+    borderRadius: 999,
+    backgroundColor: 'rgba(111,214,255,0.12)',
   },
-  dashboardHero: {
-    padding: 24,
-    borderBottomLeftRadius: 56,
-    borderBottomRightRadius: 56,
-    gap: 40,
-  },
-  headerTop: {
+  header: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    gap: spacing.md,
   },
-  greeting: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1e293b',
-    letterSpacing: -1.5,
-    textShadowColor: 'rgba(255,255,255,0.8)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 15,
-  },
-  syncTextSmall: {
-    fontSize: 13,
-    color: 'rgba(30,41,59,0.5)',
-    fontWeight: '500',
-    marginTop: 4,
-  },
-  healthValueBigLight: {
-    fontSize: 48,
-    fontWeight: '300',
-    color: '#1e293b',
-  },
-  healthUnitv2Light: {
-    fontSize: 12,
-    color: 'rgba(30,41,59,0.4)',
-    fontWeight: '600',
-  },
-  healthStatusLabelLight: {
-    fontSize: 18,
-    color: '#1e293b',
-    fontWeight: '600',
-  },
-  healthSubLabelLight: {
-    fontSize: 14,
-    color: 'rgba(30,41,59,0.5)',
-  },
-  headerRight: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  healthHero: {
-    alignItems: 'center',
-    gap: 20,
-    marginTop: 10,
-  },
-  gaugeGlow: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-  },
-  healthGaugev2: {
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    borderWidth: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    overflow: 'hidden',
-  },
-  gaugeGlassOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.5,
-  },
-  gaugeInnerRim: {
-    position: 'absolute',
-    width: 142,
-    height: 142,
-    borderRadius: 71,
-    borderWidth: 1,
-  },
-  gaugeShimmer: {
-    position: 'absolute',
-    top: 20,
-    left: 40,
-    width: 30,
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 3,
-    transform: [{ rotate: '-15deg' }],
-  },
-  healthValueBig: {
-    fontSize: 52,
-    fontWeight: '300',
-    color: '#fff',
-    letterSpacing: -2,
-    textShadowColor: 'rgba(255,255,255,0.6)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 20,
-  },
-  healthUnitv2: {
-    fontSize: 14,
-    fontWeight: '300',
-    color: 'rgba(255,255,255,0.7)',
-    letterSpacing: 4,
-    marginTop: 8,
-    textTransform: 'uppercase',
-  },
-  healthTextCenter: {
-    alignItems: 'center',
+  headerText: {
+    flex: 1,
     gap: 4,
   },
-  healthStatusLabel: {
-    fontSize: 20,
-    fontWeight: '300',
-    color: '#fff',
-    letterSpacing: 0.5,
+  kicker: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: typography.bodyBold,
+    letterSpacing: 1.4,
   },
-  healthSubLabel: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
-    fontWeight: '500',
+  title: {
+    color: colors.textPrimary,
+    fontSize: 34,
+    fontFamily: typography.displayHeavy,
   },
-  quickStatRow: {
-    flexDirection: 'row',
-    gap: 16,
-    paddingHorizontal: 20,
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontFamily: typography.bodyMedium,
   },
-  miniStatCard: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 24,
-    gap: 2,
-    overflow: 'hidden',
+  refreshButton: {
+    width: 42,
+    height: 42,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.4)',
-    borderLeftColor: 'rgba(255,255,255,0.3)',
-    borderRightColor: 'rgba(255,255,255,0.08)',
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.border,
+    ...shadows.soft,
+  },
+  summaryBlock: {
+    gap: spacing.lg,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  summaryText: {
+    flex: 1,
+    gap: 6,
+  },
+  summaryEyebrow: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: typography.bodyBold,
+    letterSpacing: 1.2,
+  },
+  summaryHeadline: {
+    color: colors.textPrimary,
+    fontSize: 44,
+    lineHeight: 50,
+    fontFamily: typography.displayHeavy,
+    maxWidth: 220,
+  },
+  summaryDescription: {
+    color: colors.textSecondary,
+    lineHeight: 20,
+    maxWidth: 220,
+    fontFamily: typography.bodyMedium,
+  },
+  summaryBadge: {
+    minWidth: 86,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    borderRadius: radii.lg,
+    alignItems: 'center',
+    backgroundColor: '#F3F9FD',
+    borderWidth: 1,
+    borderColor: '#D6E7F2',
+    gap: 4,
+  },
+  summaryBadgeIconShell: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: '#E6F2F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  miniStatValue: {
+  summaryBadgeValue: {
+    color: colors.primaryDeep,
     fontSize: 28,
-    fontWeight: '300',
-    color: '#fff',
-    marginTop: 2,
+    fontFamily: typography.displayBold,
   },
-  miniStatTitle: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.4)',
-    fontWeight: '700',
-    letterSpacing: 0,
-    textTransform: 'uppercase',
+  summaryBadgeLabel: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: typography.bodyBold,
   },
-  section: {
-    marginTop: 32,
-    paddingHorizontal: 20,
+  metricsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  metricCard: {
+    flex: 1,
+    borderRadius: radii.md,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    gap: 4,
+    ...shadows.soft,
+  },
+  metricIconShell: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricValue: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontFamily: typography.displayBold,
+  },
+  metricLabel: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: typography.bodyBold,
+  },
+  focusSection: {
+    gap: spacing.md,
   },
   sectionHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  sectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontFamily: typography.bodyBold,
+    letterSpacing: 0.4,
+  },
+  sectionMeta: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: typography.bodySemibold,
+  },
+  emptyCard: {
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    gap: spacing.sm,
+    ...shadows.soft,
+  },
+  emptyIconShell: {
+    width: 62,
+    height: 62,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontFamily: typography.displayBold,
+  },
+  emptyDescription: {
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 21,
+    maxWidth: 260,
+    fontFamily: typography.bodyMedium,
+  },
+  focusList: {
+    gap: spacing.sm,
+  },
+  focusCard: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: spacing.md,
+    padding: 12,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.soft,
+  },
+  focusImage: {
+    width: 118,
+    height: 118,
+    borderRadius: radii.md,
+  },
+  focusFallback: {
+    width: 118,
+    height: 118,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary,
+  },
+  focusBody: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 6,
+    paddingRight: 2,
+  },
+  focusTopRow: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    gap: spacing.sm,
   },
-  glassSection: {
-    marginHorizontal: 20,
-    marginTop: 32,
-    borderRadius: 40,
-    padding: 24,
-    borderWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.5)',
-    borderLeftColor: 'rgba(255,255,255,0.3)',
-    borderRightColor: 'rgba(255,255,255,0.05)',
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-    overflow: 'hidden',
-  },
-  sectionTitleGlass: {
-    fontSize: 22,
-    fontWeight: '300',
-    color: '#fff',
-    letterSpacing: -0.5,
-  },
-  seeAllLinkGlass: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
-    fontWeight: '700',
-  },
-  overviewGridGlass: {
-    flexDirection: 'row',
-    marginTop: 20,
-    gap: 12,
-  },
-  overviewCardGlass: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  overviewValueGlass: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1e293b',
-  },
-  overviewLabelGlass: {
-    fontSize: 12,
-    color: 'rgba(30,41,59,0.4)',
-    fontWeight: '700',
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginTop: 4,
-  },
-  insightPlateGlass: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    padding: 16,
-    borderRadius: 24,
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  insightTextGlass: {
-    fontSize: 14,
-    color: 'rgba(30,41,59,0.5)',
-    fontWeight: '600',
-    flex: 1,
-    lineHeight: 20,
-  },
-  priorityList: {
-    paddingRight: 20,
-    gap: 16,
-  },
-  priorityCard: {
-    width: 220,
-    height: 140,
-    borderRadius: 32,
-    overflow: 'hidden',
-  },
-  priorityCardGlass: {
-    flex: 1,
-    padding: 20,
-    justifyContent: 'flex-end',
-    gap: 4,
-    borderWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.4)',
-    borderLeftColor: 'rgba(255,255,255,0.2)',
-    borderRightColor: 'rgba(0,0,0,0.1)',
-    borderBottomColor: 'rgba(0,0,0,0.1)',
-  },
-  priorityIcon: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    opacity: 0.2,
-  },
-  priorityName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1e293b',
-  },
-  priorityMeta: {
-    fontSize: 13,
-    color: 'rgba(30,41,59,0.5)',
-    fontWeight: '600',
-  },
-  addPriorityCardGlass: {
-    width: 140,
-    height: 140,
-    borderRadius: 32,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+  focusInfoBlock: {
+    gap: 6,
     justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    gap: 8,
   },
-  addPriorityTextGlass: {
-    fontSize: 14,
-    color: 'rgba(30,41,59,0.4)',
-    fontWeight: '700',
+  focusPrimary: {
+    fontSize: 24,
+    lineHeight: 28,
+    fontFamily: typography.displayBold,
+  },
+  focusSecondary: {
+    fontSize: 13,
+    color: colors.textMuted,
+    fontFamily: typography.bodySemibold,
   },
 });

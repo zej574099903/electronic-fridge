@@ -12,6 +12,7 @@ export interface NoticeReadState {
 
 export interface CreateFridgeItemInput {
   name: string;
+  photoUri?: string;
   category: ItemCategory;
   storageSpace?: StorageSpace;
   expiresOn?: string;

@@ -17,7 +17,13 @@
       "package": "com.electronicfridge.mobile"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "允许使用相机拍摄食物照片并记录库存"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

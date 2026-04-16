@@ -16,6 +16,7 @@ export interface FridgeItem {
   id: string;
   householdId: string;
   name: string;
+  photoUri?: string;
   category: ItemCategory;
   status: ItemStatus;
   storageSpace?: StorageSpace;
@@ -30,6 +31,7 @@ export interface FridgeItem {
 
 export interface CreateItemInput {
   name: string;
+  photoUri?: string;
   category: ItemCategory;
   storageSpace?: StorageSpace;
   expireAt?: string;
@@ -41,6 +43,7 @@ export interface CreateItemInput {
 
 export interface UpdateItemInput {
   name?: string;
+  photoUri?: string;
   category?: ItemCategory;
   status?: ItemStatus;
   storageSpace?: StorageSpace;

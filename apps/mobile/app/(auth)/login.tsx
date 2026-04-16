@@ -1,312 +1,294 @@
-import React, { useState, useEffect } from 'react';
-import {
-    StyleSheet,
-    Text,
-    View,
-    TextInput,
-    Pressable,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    SafeAreaView,
-    Alert,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '@/src/constants/colors';
+import { ScreenContainer } from '@/src/components/ScreenContainer';
+import { colors, radii, shadows, spacing } from '@/src/constants/colors';
+import { typography } from '@/src/constants/typography';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { authApi } from '@/src/lib/api';
 
 export default function LoginScreen() {
-    const [phone, setPhone] = useState('');
-    const [code, setCode] = useState('');
-    const [countdown, setCountdown] = useState(0);
-    const [isSendingCode, setIsSendingCode] = useState(false);
-    const { login, isLoading, error, clearError } = useAuthStore();
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [countdown, setCountdown] = useState(0);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const { login, isLoading, error, clearError } = useAuthStore();
 
-    useEffect(() => {
-        // Clear any previous error messages when the screen mounts
-        clearError();
+  useEffect(() => {
+    clearError();
 
-        let timer: any;
-        if (countdown > 0) {
-            timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-        }
-        return () => clearTimeout(timer);
-    }, [countdown]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (countdown > 0) {
+      timer = setTimeout(() => setCountdown((value) => value - 1), 1000);
+    }
 
-    const handleSendCode = async () => {
-        if (!/^1[3-9]\d{9}$/.test(phone)) {
-            Alert.alert('输入有误', '请输入正确的手机号码');
-            return;
-        }
-
-        setIsSendingCode(true);
-        try {
-            await authApi.sendCode(phone);
-            setCountdown(60);
-            Alert.alert('提示', '验证码已发送 (开发阶段请使用 123456)');
-        } catch (err) {
-            Alert.alert('发送失败', '请稍后再试');
-        } finally {
-            setIsSendingCode(false);
-        }
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
     };
+  }, [clearError, countdown]);
 
-    const handleLogin = async () => {
-        if (!phone || !code) {
-            Alert.alert('提示', '请完整填写手机号和验证码');
-            return;
-        }
+  async function handleSendCode() {
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      Alert.alert('输入有误', '请输入正确的手机号码');
+      return;
+    }
 
-        const success = await login(phone, code);
-        if (success) {
-            router.replace('/(tabs)');
-        }
-    };
+    setIsSendingCode(true);
+    try {
+      await authApi.sendCode(phone);
+      setCountdown(60);
+      Alert.alert('验证码已发送', '开发阶段验证码固定为 123456');
+    } catch {
+      Alert.alert('发送失败', '请稍后再试');
+    } finally {
+      setIsSendingCode(false);
+    }
+  }
 
-    return (
-        <SafeAreaView style={styles.container}>
-            <Stack.Screen options={{ headerShown: false }} />
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={{ flex: 1 }}
-            >
-                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                    <View style={styles.header}>
-                        <View style={styles.logoContainer}>
-                            <Ionicons name="snow" size={48} color={colors.primary} />
-                        </View>
-                        <Text style={styles.title}>Arctic Fresh</Text>
-                        <Text style={styles.subtitle}>智能管理您的电子冰箱</Text>
-                    </View>
+  async function handleLogin() {
+    if (!phone || !code) {
+      Alert.alert('提示', '请完整填写手机号和验证码');
+      return;
+    }
 
-                    <View style={styles.form}>
-                        <View style={styles.inputGroup}>
-                            <Text style={styles.label}>手机号码</Text>
-                            <View style={styles.inputWrapper}>
-                                <Ionicons name="phone-portrait-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="请输入手机号"
-                                    value={phone}
-                                    onChangeText={setPhone}
-                                    keyboardType="phone-pad"
-                                    maxLength={11}
-                                    placeholderTextColor={colors.textMuted}
-                                />
-                            </View>
-                        </View>
+    const success = await login(phone, code);
+    if (success) {
+      router.replace('/(tabs)');
+    }
+  }
 
-                        <View style={styles.inputGroup}>
-                            <Text style={styles.label}>验证码</Text>
-                            <View style={styles.inputWrapper}>
-                                <Ionicons name="shield-checkmark-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
-                                <TextInput
-                                    style={[styles.input, { flex: 1 }]}
-                                    placeholder="请输入6位验证码"
-                                    value={code}
-                                    onChangeText={setCode}
-                                    keyboardType="number-pad"
-                                    maxLength={6}
-                                    placeholderTextColor={colors.textMuted}
-                                />
-                                <Pressable
-                                    onPress={handleSendCode}
-                                    disabled={countdown > 0 || isSendingCode}
-                                    style={({ pressed }) => [
-                                        styles.codeButton,
-                                        (countdown > 0 || isSendingCode || pressed) && styles.codeButtonDisabled
-                                    ]}
-                                >
-                                    <Text style={styles.codeButtonText}>
-                                        {countdown > 0 ? `${countdown}s` : '获取验证码'}
-                                    </Text>
-                                </Pressable>
-                            </View>
-                        </View>
+  return (
+    <ScreenContainer edges={['top', 'bottom', 'left', 'right']}>
+      <StatusBar style="dark" />
+      <Stack.Screen options={{ headerShown: false }} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <View style={styles.topGlow} />
 
-                        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          <View style={styles.header}>
+            <Text style={styles.kicker}>FRIDGE</Text>
+            <Text style={styles.title}>把库存看清楚</Text>
+            <Text style={styles.subtitle}>用手机号进入你的冰箱记录。</Text>
+          </View>
 
-                        <Pressable
-                            onPress={handleLogin}
-                            disabled={isLoading}
-                            style={({ pressed }) => [
-                                styles.loginButton,
-                                (isLoading || pressed) && styles.loginButtonDisabled
-                            ]}
-                        >
-                            <Text style={styles.loginButtonText}>{isLoading ? '登录中...' : '立即登录'}</Text>
-                        </Pressable>
-                    </View>
+          <View style={styles.panel}>
+            <View style={styles.panelHeader}>
+              <View style={styles.logoIcon}>
+                <Ionicons name="snow-outline" size={26} color={colors.primaryDeep} />
+              </View>
+              <View style={styles.panelHeaderText}>
+                <Text style={styles.panelTitle}>手机号登录</Text>
+                <Text style={styles.panelSubtitle}>开发环境验证码固定为 123456</Text>
+              </View>
+            </View>
 
-                    <View style={styles.footer}>
-                        <Text style={styles.footerText}>其他登录方式</Text>
-                        <View style={styles.socialRow}>
-                            <Pressable style={({ pressed }) => [styles.socialIcon, pressed && { opacity: 0.6 }]}>
-                                <Ionicons name="logo-wechat" size={24} color="#07C160" />
-                            </Pressable>
-                            <Pressable style={({ pressed }) => [styles.socialIcon, pressed && { opacity: 0.6 }]}>
-                                <Ionicons name="logo-apple" size={24} color="#000000" />
-                            </Pressable>
-                            <Pressable style={({ pressed }) => [styles.socialIcon, pressed && { opacity: 0.6 }]}>
-                                <Ionicons name="logo-google" size={24} color="#EA4335" />
-                            </Pressable>
-                        </View>
-                        <Text style={styles.agreementText}>
-                            登录即代表您同意 <Text style={styles.link}>用户协议</Text> 和 <Text style={styles.link}>隐私政策</Text>
-                        </Text>
-                    </View>
-                </ScrollView>
-            </KeyboardAvoidingView>
-        </SafeAreaView>
-    );
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>手机号</Text>
+              <View style={styles.inputShell}>
+                <Ionicons name="phone-portrait-outline" size={18} color={colors.textMuted} />
+                <TextInput
+                  value={phone}
+                  onChangeText={setPhone}
+                  placeholder="请输入手机号"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="phone-pad"
+                  maxLength={11}
+                  style={styles.input}
+                />
+              </View>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>验证码</Text>
+              <View style={styles.inputShell}>
+                <Ionicons name="shield-checkmark-outline" size={18} color={colors.textMuted} />
+                <TextInput
+                  value={code}
+                  onChangeText={setCode}
+                  placeholder="请输入 6 位验证码"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  style={styles.input}
+                />
+                <Pressable onPress={() => void handleSendCode()} disabled={countdown > 0 || isSendingCode} style={[styles.codeButton, (countdown > 0 || isSendingCode) && styles.codeButtonDisabled]}>
+                  <Text style={styles.codeButtonText}>{countdown > 0 ? `${countdown}s` : '获取验证码'}</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+            <Pressable onPress={() => void handleLogin()} disabled={isLoading} style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}>
+              <Text style={styles.loginButtonText}>{isLoading ? '登录中...' : '进入冰箱'}</Text>
+            </Pressable>
+
+            <View style={styles.footnoteRow}>
+              <Ionicons name="wifi-outline" size={16} color={colors.primary} />
+              <Text style={styles.footnoteText}>Expo Go 预览时，手机与电脑保持同一网络会更稳定。</Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ScreenContainer>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    scrollContent: {
-        padding: 24,
-        paddingTop: 60,
-        gap: 40,
-    },
-    header: {
-        alignItems: 'center',
-        gap: 12,
-    },
-    logoContainer: {
-        width: 100,
-        height: 100,
-        borderRadius: 30,
-        backgroundColor: colors.surface,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.1,
-        shadowRadius: 20,
-        elevation: 8,
-    },
-    title: {
-        fontSize: 32,
-        fontWeight: '800',
-        color: colors.primary,
-        letterSpacing: -0.5,
-    },
-    subtitle: {
-        fontSize: 16,
-        color: colors.textSecondary,
-        fontWeight: '500',
-    },
-    form: {
-        gap: 24,
-    },
-    inputGroup: {
-        gap: 8,
-    },
-    label: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: colors.textPrimary,
-        marginLeft: 4,
-    },
-    inputWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: colors.surfaceAlt,
-        borderRadius: 20,
-        borderWidth: 1.5,
-        borderColor: colors.border,
-        paddingHorizontal: 16,
-        height: 64,
-    },
-    inputIcon: {
-        marginRight: 12,
-    },
-    input: {
-        flex: 1,
-        fontSize: 16,
-        color: colors.textPrimary,
-        fontWeight: '600',
-    },
-    codeButton: {
-        backgroundColor: colors.primary,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 14,
-    },
-    codeButtonDisabled: {
-        backgroundColor: colors.border,
-        opacity: 0.8,
-    },
-    codeButtonText: {
-        color: colors.surface,
-        fontSize: 13,
-        fontWeight: '700',
-    },
-    loginButton: {
-        backgroundColor: colors.primary,
-        height: 64,
-        borderRadius: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: 12,
-        shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.2,
-        shadowRadius: 15,
-        elevation: 6,
-    },
-    loginButtonDisabled: {
-        opacity: 0.6,
-    },
-    loginButtonText: {
-        color: colors.surface,
-        fontSize: 18,
-        fontWeight: '800',
-        letterSpacing: 1,
-    },
-    errorText: {
-        color: colors.danger,
-        fontSize: 14,
-        fontWeight: '600',
-        textAlign: 'center',
-    },
-    footer: {
-        alignItems: 'center',
-        gap: 24,
-        marginTop: 20,
-    },
-    footerText: {
-        fontSize: 14,
-        color: colors.textMuted,
-        fontWeight: '600',
-    },
-    socialRow: {
-        flexDirection: 'row',
-        gap: 24,
-    },
-    socialIcon: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        backgroundColor: colors.surface,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    agreementText: {
-        fontSize: 12,
-        color: colors.textMuted,
-        textAlign: 'center',
-        lineHeight: 18,
-    },
-    link: {
-        color: colors.secondary,
-        fontWeight: '700',
-    },
+  keyboard: {
+    flex: 1,
+  },
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.lg,
+    paddingTop: 24,
+    paddingBottom: 40,
+    gap: spacing.xl,
+    justifyContent: 'center',
+  },
+  topGlow: {
+    position: 'absolute',
+    top: -130,
+    right: -70,
+    width: 320,
+    height: 320,
+    borderRadius: 999,
+    backgroundColor: 'rgba(111,214,255,0.12)',
+  },
+  header: {
+    gap: 6,
+  },
+  kicker: {
+    color: colors.textMuted,
+    fontSize: 11,
+    letterSpacing: 1.6,
+    fontFamily: typography.bodyBold,
+  },
+  title: {
+    color: colors.textPrimary,
+    fontSize: 38,
+    lineHeight: 46,
+    fontFamily: typography.displayHeavy,
+    maxWidth: 260,
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    fontFamily: typography.bodyMedium,
+    maxWidth: 260,
+  },
+  panel: {
+    backgroundColor: 'rgba(255,255,255,0.86)',
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    gap: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  panelHeader: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'center',
+  },
+  logoIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: colors.chilled,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  panelHeaderText: {
+    flex: 1,
+    gap: 4,
+  },
+  panelTitle: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontFamily: typography.displayBold,
+  },
+  panelSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: typography.bodyMedium,
+  },
+  fieldGroup: {
+    gap: spacing.sm,
+  },
+  label: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontFamily: typography.bodyBold,
+  },
+  inputShell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+  },
+  input: {
+    flex: 1,
+    paddingVertical: 16,
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontFamily: typography.bodyMedium,
+  },
+  codeButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primaryDeep,
+  },
+  codeButtonDisabled: {
+    opacity: 0.55,
+  },
+  codeButtonText: {
+    color: colors.textOnDark,
+    fontSize: 13,
+    fontFamily: typography.bodyBold,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontFamily: typography.bodyBold,
+  },
+  loginButton: {
+    minHeight: 52,
+    backgroundColor: colors.primaryDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.pill,
+    ...shadows.soft,
+  },
+  loginButtonDisabled: {
+    opacity: 0.55,
+  },
+  loginButtonText: {
+    color: colors.textOnDark,
+    fontSize: 15,
+    fontFamily: typography.bodyBold,
+  },
+  footnoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  footnoteText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: typography.bodyMedium,
+  },
 });

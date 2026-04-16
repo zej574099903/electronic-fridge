@@ -24,6 +24,7 @@ function serializeItem(item: {
   _id: unknown;
   householdId: string;
   name: string;
+  photoUri?: string | null;
   category: ItemCategory;
   storageSpace?: StorageSpace | null;
   status: string;
@@ -39,6 +40,7 @@ function serializeItem(item: {
     id: String(item._id),
     householdId: item.householdId,
     name: item.name,
+    photoUri: item.photoUri ?? undefined,
     category: item.category,
     storageSpace: item.storageSpace ?? undefined,
     status: item.status,
@@ -97,6 +99,7 @@ export async function PATCH(
     { _id: id, householdId: household.id },
     {
       ...(body.name !== undefined ? { name: body.name.trim() } : null),
+      ...(body.photoUri !== undefined ? { photoUri: body.photoUri.trim() || undefined } : null),
       ...(body.category !== undefined ? { category: body.category } : null),
       ...(body.storageSpace !== undefined ? { storageSpace: body.storageSpace } : null),
       ...(body.status !== undefined ? { status: body.status } : null),

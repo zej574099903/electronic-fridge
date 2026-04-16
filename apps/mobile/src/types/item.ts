@@ -32,6 +32,7 @@ export interface FridgeItem {
   id: string;
   householdId?: string;
   name: string;
+  photoUri?: string;
   category: ItemCategory;
   status: ItemStatus;
   storageSpace?: StorageSpace;

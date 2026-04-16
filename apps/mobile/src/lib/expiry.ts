@@ -18,6 +18,8 @@ export interface InventoryTask {
   tone: 'warning' | 'danger' | 'success';
 }
 
+export type InventoryNoticeGroupKey = 'urgent' | 'tomorrow' | 'this_week';
+
 function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -138,6 +140,15 @@ export function buildInventoryNotices(items: FridgeItem[]): InventoryNotice[] {
           time: '明天',
           tone: 'warning',
         });
+      } else if (daysUntilExpiration !== null && daysUntilExpiration <= 7) {
+        notices.push({
+          id: `${item.id}-week`,
+          itemId: item.id,
+          type: '临期提醒',
+          title: `${item.name} ${daysUntilExpiration} 天后到期${quantityText}`,
+          time: `${daysUntilExpiration} 天后`,
+          tone: 'success',
+        });
       }
 
       if (item.category === 'leftover') {
@@ -147,7 +158,7 @@ export function buildInventoryNotices(items: FridgeItem[]): InventoryNotice[] {
           type: '剩菜提醒',
           title: `${item.name} 建议优先处理${quantityText}`,
           time: item.expireAt ?? '尽快',
-          tone: 'success',
+          tone: daysUntilExpiration !== null && daysUntilExpiration <= 1 ? 'warning' : 'success',
         });
       }
 
@@ -157,6 +168,30 @@ export function buildInventoryNotices(items: FridgeItem[]): InventoryNotice[] {
       const toneRank = { danger: 0, warning: 1, success: 2 };
       return toneRank[left.tone] - toneRank[right.tone];
     });
+}
+
+export function groupInventoryNotices(notices: InventoryNotice[]) {
+  const groups: Array<{ key: InventoryNoticeGroupKey; title: string; notices: InventoryNotice[] }> = [
+    { key: 'urgent', title: '今天必须处理', notices: [] },
+    { key: 'tomorrow', title: '明天处理', notices: [] },
+    { key: 'this_week', title: '本周关注', notices: [] },
+  ];
+
+  notices.forEach((notice) => {
+    if (notice.tone === 'danger' || notice.time === '今天' || notice.time === '已过期') {
+      groups[0].notices.push(notice);
+      return;
+    }
+
+    if (notice.time === '明天') {
+      groups[1].notices.push(notice);
+      return;
+    }
+
+    groups[2].notices.push(notice);
+  });
+
+  return groups.filter((group) => group.notices.length > 0);
 }
 
 export function buildInventoryTasks(items: FridgeItem[]): InventoryTask[] {

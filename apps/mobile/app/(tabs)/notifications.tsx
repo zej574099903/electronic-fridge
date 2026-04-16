@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/src/components/ScreenContainer';
-import { StatusBar } from 'expo-status-bar';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '@/src/constants/colors';
-import { buildInventoryNotices } from '@/src/lib/expiry';
-import { useInventoryStore } from '@/src/store/useInventoryStore';
+import { colors, radii, shadows, spacing } from '@/src/constants/colors';
+import { typography } from '@/src/constants/typography';
+import { buildInventoryNotices, groupInventoryNotices } from '@/src/lib/expiry';
+import { formatLastSyncedAt, useInventoryStore } from '@/src/store/useInventoryStore';
+import { ItemStatus } from '@/src/types/item';
 
 type NoticeFilter = 'all' | 'unread' | 'read';
 
@@ -20,161 +19,541 @@ const noticeFilterOptions: Array<{ label: string; value: NoticeFilter }> = [
 ];
 
 export default function NotificationsTabScreen() {
-  const insets = useSafeAreaInsets();
   const [selectedFilter, setSelectedFilter] = useState<NoticeFilter>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const items = useInventoryStore((state) => state.items);
   const initialized = useInventoryStore((state) => state.initialized);
-  const isLoading = useInventoryStore((state) => state.isLoading);
+  const isMutating = useInventoryStore((state) => state.isMutating);
+  const lastSyncedAt = useInventoryStore((state) => state.lastSyncedAt);
   const noticeReadState = useInventoryStore((state) => state.noticeReadState);
   const fetchItems = useInventoryStore((state) => state.fetchItems);
   const fetchNoticeReadState = useInventoryStore((state) => state.fetchNoticeReadState);
   const markNoticeAsRead = useInventoryStore((state) => state.markNoticeAsRead);
   const markAllNoticesAsRead = useInventoryStore((state) => state.markAllNoticesAsRead);
+  const updateItemStatus = useInventoryStore((state) => state.updateItemStatus);
 
   const notices = buildInventoryNotices(items).map((notice) => ({
     ...notice,
     isRead: Boolean(noticeReadState[notice.id]),
   }));
-
   const unreadCount = notices.filter((notice) => !notice.isRead).length;
+  const syncText = formatLastSyncedAt(lastSyncedAt);
 
   const filteredNotices = useMemo(() => {
-    if (selectedFilter === 'unread') return notices.filter((notice) => !notice.isRead);
-    if (selectedFilter === 'read') return notices.filter((notice) => notice.isRead);
+    if (selectedFilter === 'unread') {
+      return notices.filter((notice) => !notice.isRead);
+    }
+    if (selectedFilter === 'read') {
+      return notices.filter((notice) => notice.isRead);
+    }
     return notices;
   }, [notices, selectedFilter]);
+  const groupedNotices = useMemo(() => groupInventoryNotices(filteredNotices), [filteredNotices]);
 
   useEffect(() => {
     if (!initialized) {
       void fetchItems();
       return;
     }
+
     void fetchNoticeReadState();
   }, [fetchItems, fetchNoticeReadState, initialized]);
 
   async function handleRefresh() {
     setIsRefreshing(true);
-    try { await fetchItems(); } finally { setIsRefreshing(false); }
+    try {
+      await fetchItems();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
+  function handleMarkAllRead() {
+    const unreadNoticeIds = notices.filter((notice) => !notice.isRead).map((notice) => notice.id);
+    if (unreadNoticeIds.length === 0) {
+      return;
+    }
+    markAllNoticesAsRead(unreadNoticeIds);
+  }
+
+  function handleProcessNotice(itemId: string, noticeId: string, status: ItemStatus) {
+    const item = items.find((currentItem) => currentItem.id === itemId);
+    if (!item) {
+      return;
+    }
+
+    const actionLabel = status === 'eaten' ? '吃掉' : '丢弃';
+    Alert.alert('处理提醒', `确认把「${item.name}」标记为已${actionLabel}吗？`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '确认',
+        onPress: async () => {
+          try {
+            await updateItemStatus(itemId, status);
+            markNoticeAsRead(noticeId);
+          } catch {
+            Alert.alert('处理失败', '请稍后再试');
+          }
+        },
+      },
+    ]);
   }
 
   return (
-    <ScreenContainer edges={['left', 'right']} style={{ backgroundColor: 'transparent' }}>
-      <StatusBar style="dark" translucent />
-      <View style={StyleSheet.absoluteFill}>
-        <Image source={require('../../assets/branding/arctic_bg_v3_light.png')} style={StyleSheet.absoluteFill} resizeMode="cover" blurRadius={10} />
-        <LinearGradient colors={['rgba(255,255,255,0.4)', 'rgba(255,255,255,0.1)', 'rgba(255,255,255,0.6)']} style={StyleSheet.absoluteFill} />
-      </View>
-
+    <ScreenContainer>
+      <StatusBar style="dark" />
       <ScrollView
-        contentContainerStyle={[styles.content, { backgroundColor: 'transparent' }]}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor="#1e293b" />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} />}
       >
-        <View style={styles.heroTransparent}>
-          <View style={[styles.heroTop, { paddingTop: insets.top + 8 }]}>
-            <View>
-              <Text style={styles.titleLight}>智能提醒</Text>
-              <Text style={styles.heroSubTextLight}>临期预警 · 剩菜管理 · 健康关怀</Text>
-            </View>
-            <Ionicons name="notifications" size={28} color="#1e293b" style={{ opacity: 0.8 }} />
-          </View>
+        <View style={styles.topGlow} />
 
-          <View style={styles.statsRow}>
-            <BlurView intensity={80} tint="light" style={styles.statCardGlass}>
-              <Text style={styles.statValueLight}>{notices.length}</Text>
-              <Text style={styles.statLabelLight}>总提醒</Text>
-            </BlurView>
-            <BlurView intensity={80} tint="light" style={styles.statCardGlass}>
-              <Text style={styles.statValueLight}>{unreadCount}</Text>
-              <Text style={styles.statLabelLight}>未处理</Text>
-            </BlurView>
+        <View style={styles.header}>
+          <View style={styles.headerBody}>
+            <Text style={styles.kicker}>提醒</Text>
+            <Text style={styles.title}>处理队列</Text>
+            <Text style={styles.subtitle}>{unreadCount === 0 ? '当前没有待处理提醒' : `${unreadCount} 条提醒等待处理`}</Text>
+            <Text style={styles.syncText}>{syncText}</Text>
+          </View>
+          <View style={styles.counterBadge}>
+            <Text style={styles.counterValue}>{unreadCount}</Text>
+            <Text style={styles.counterLabel}>未读</Text>
           </View>
         </View>
 
-        <View style={styles.mainContent}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitleLight}>分类通知</Text>
-            {unreadCount > 0 && (
-              <Pressable onPress={() => markAllNoticesAsRead(notices.filter((n) => !n.isRead).map((n) => n.id))}>
-                <Text style={styles.markAllTextLight}>全部已读</Text>
+        <View style={styles.summaryBlock}>
+          <View style={styles.summaryText}>
+            <Text style={styles.summaryEyebrow}>批量操作</Text>
+            <Text style={styles.summaryTitle}>先把临期项处理掉</Text>
+            <Text style={styles.summaryDescription}>提醒只做一件事：把快过期的库存尽快变成行动。</Text>
+          </View>
+          <Pressable disabled={unreadCount === 0} onPress={handleMarkAllRead} style={[styles.summaryButton, unreadCount === 0 && styles.summaryButtonDisabled]}>
+            <Text style={[styles.summaryButtonText, unreadCount === 0 && styles.summaryButtonTextDisabled]}>全部已读</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.filterRow}>
+          {noticeFilterOptions.map((option) => {
+            const active = option.value === selectedFilter;
+            return (
+              <Pressable key={option.value} onPress={() => setSelectedFilter(option.value)} style={[styles.filterChip, active && styles.filterChipActive]}>
+                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
               </Pressable>
-            )}
+            );
+          })}
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderText}>
+              <Text style={styles.sectionEyebrow}>待处理提醒</Text>
+              <Text style={styles.sectionTitle}>按时间分组</Text>
+            </View>
+            <Text style={styles.sectionMeta}>{filteredNotices.length} 条</Text>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-            {noticeFilterOptions.map((option) => {
-              const active = option.value === selectedFilter;
-              return (
-                <Pressable key={option.value} onPress={() => setSelectedFilter(option.value)} style={[styles.filterChipGlass, active && styles.filterChipActiveGlass]}>
-                  <Text style={[styles.filterChipTextGlass, active && styles.filterChipTextActiveGlass]}>{option.label}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          <View style={styles.noticeList}>
-            {isLoading && !initialized ? (
-              <View style={styles.emptyContainer}><Ionicons name="sync" size={48} color="rgba(30,41,59,0.2)" /><Text style={styles.emptyTextLight}>正在生成智能提醒...</Text></View>
-            ) : notices.length === 0 ? (
-              <View style={styles.emptyContainer}><Ionicons name="notifications-off" size={48} color="rgba(30,41,59,0.2)" /><Text style={styles.emptyTextLight}>太棒了！目前没有任何临期风险。</Text></View>
-            ) : filteredNotices.length === 0 ? (
-              <View style={styles.emptyContainer}><Ionicons name="filter" size={48} color="rgba(30,41,59,0.2)" /><Text style={styles.emptyTextLight}>当前筛选下没有此类提醒。</Text></View>
-            ) : (
-              filteredNotices.map((notice) => (
-                <BlurView key={notice.id} intensity={80} tint="light" style={[styles.noticeItemGlass, notice.isRead && { opacity: 0.6 }]}>
-                  <Pressable
-                    onPress={() => { markNoticeAsRead(notice.id); router.push({ pathname: '/(tabs)/inventory', params: { itemId: notice.itemId } }); }}
-                    style={styles.noticeItemMainGlass}
-                  >
-                    <View style={[styles.noticeToneIconGlass, { backgroundColor: notice.tone === 'danger' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)' }]}>
-                      <Ionicons name={notice.tone === 'danger' ? 'alert-circle' : 'information-circle'} size={20} color={notice.tone === 'danger' ? '#ef4444' : '#3b82f6'} />
-                    </View>
-                    <View style={styles.noticeBody}>
-                      <Text style={[styles.noticeTypeText, { color: notice.tone === 'danger' ? '#ef4444' : '#3b82f6' }]}>{notice.type}</Text>
-                      <Text style={styles.noticeTitleTextLight}>{notice.title}</Text>
-                      <Text style={styles.noticeTimeTextLight}>{notice.time}</Text>
-                    </View>
-                    {!notice.isRead && <View style={styles.unreadDotLight} />}
-                  </Pressable>
-                </BlurView>
-              ))
-            )}
-          </View>
+          {groupedNotices.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <View style={styles.emptyIconShell}>
+                <Ionicons name="notifications-off-outline" size={24} color={colors.primaryDeep} />
+              </View>
+              <Text style={styles.emptyTitle}>没有符合条件的提醒</Text>
+              <Text style={styles.emptyDescription}>当前库存状态比较稳定，先继续保持就好。</Text>
+            </View>
+          ) : (
+            groupedNotices.map((group) => (
+              <View key={group.key} style={styles.groupBlock}>
+                <View style={styles.groupHeader}>
+                  <Text style={styles.groupTitle}>{group.title}</Text>
+                  <Text style={styles.groupCount}>{group.notices.length} 条</Text>
+                </View>
+                <View style={styles.groupList}>
+                  {group.notices.map((notice) => {
+                    const toneColor = notice.tone === 'danger' ? colors.danger : notice.tone === 'warning' ? colors.warning : colors.success;
+                    return (
+                      <View key={notice.id} style={[styles.noticeCard, notice.isRead && styles.noticeCardRead]}>
+                        <Pressable
+                          onPress={() => {
+                            markNoticeAsRead(notice.id);
+                            router.push({ pathname: '/(tabs)/inventory', params: { itemId: notice.itemId } });
+                          }}
+                          style={styles.noticeMain}
+                        >
+                          <View style={[styles.noticeIcon, { backgroundColor: `${toneColor}18` }]}>
+                            <Ionicons name={notice.tone === 'danger' ? 'warning-outline' : 'notifications-outline'} size={18} color={toneColor} />
+                          </View>
+                          <View style={styles.noticeBody}>
+                            <Text style={[styles.noticeType, { color: toneColor }]}>{notice.type}</Text>
+                            <Text style={styles.noticeTitle}>{notice.title}</Text>
+                            <Text style={styles.noticeTime}>{notice.time}</Text>
+                          </View>
+                          {!notice.isRead ? <View style={styles.unreadDot} /> : null}
+                        </Pressable>
+                        <View style={styles.noticeActions}>
+                          <MiniAction
+                            label="吃掉"
+                            icon="restaurant-outline"
+                            color={colors.success}
+                            disabled={isMutating}
+                            onPress={() => handleProcessNotice(notice.itemId, notice.id, 'eaten')}
+                          />
+                          <MiniAction
+                            label="丢弃"
+                            icon="trash-outline"
+                            color={colors.danger}
+                            disabled={isMutating}
+                            onPress={() => handleProcessNotice(notice.itemId, notice.id, 'discarded')}
+                          />
+                          <MiniAction
+                            label="查看"
+                            icon="arrow-forward-outline"
+                            color={colors.primary}
+                            disabled={false}
+                            onPress={() => {
+                              markNoticeAsRead(notice.id);
+                              router.push({ pathname: '/item/[id]', params: { id: notice.itemId } });
+                            }}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
     </ScreenContainer>
   );
 }
 
+function MiniAction({
+  label,
+  icon,
+  color,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} disabled={disabled} style={[styles.actionChip, disabled && styles.actionChipDisabled]}>
+      <Ionicons name={icon} size={16} color={color} />
+      <Text style={styles.actionChipText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  content: { paddingBottom: 150 },
-  mainContent: { flex: 1, paddingHorizontal: 20, marginTop: 0 },
-  heroTransparent: { padding: 24, paddingTop: 40, paddingBottom: 24, gap: 24 },
-  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  titleLight: { fontSize: 28, fontWeight: '800', color: '#1e293b', letterSpacing: -0.5, textShadowColor: 'rgba(255,255,255,0.8)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 },
-  heroSubTextLight: { fontSize: 13, color: 'rgba(30,41,59,0.5)', fontWeight: '700', marginTop: 4 },
-  statsRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  statCardGlass: { flex: 1, padding: 16, borderRadius: 24, gap: 4, overflow: 'hidden', borderWidth: 1, borderTopColor: 'rgba(255,255,255,0.4)', borderLeftColor: 'rgba(255,255,255,0.2)', borderRightColor: 'rgba(0,0,0,0.1)', borderBottomColor: 'rgba(0,0,0,0.2)' },
-  statValueLight: { fontSize: 24, fontWeight: '800', color: '#1e293b' },
-  statLabelLight: { fontSize: 11, color: 'rgba(30,41,59,0.4)', fontWeight: '700', textTransform: 'uppercase' },
-  sectionTitleLight: { fontSize: 20, fontWeight: '800', color: '#1e293b' },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 10, paddingHorizontal: 4 },
-  markAllTextLight: { fontSize: 14, color: '#3b82f6', fontWeight: '700' },
-  filterRow: { gap: 10, marginBottom: 20, paddingHorizontal: 4 },
-  filterChipGlass: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24, backgroundColor: 'rgba(30,41,59,0.03)', borderWidth: 1, borderColor: 'rgba(30,41,59,0.1)' },
-  filterChipActiveGlass: { backgroundColor: 'rgba(30,41,59,0.1)', borderColor: 'rgba(30,41,59,0.2)' },
-  filterChipTextGlass: { fontSize: 13, color: 'rgba(30,41,59,0.5)', fontWeight: '700' },
-  filterChipTextActiveGlass: { color: '#1e293b' },
-  noticeList: { gap: 12, paddingBottom: 40 },
-  noticeItemGlass: { borderRadius: 32, overflow: 'hidden', borderWidth: 1, borderTopColor: 'rgba(255,255,255,0.4)', borderLeftColor: 'rgba(255,255,255,0.2)', borderRightColor: 'rgba(0,0,0,0.1)', borderBottomColor: 'rgba(0,0,0,0.2)' },
-  noticeItemMainGlass: { flexDirection: 'row', alignItems: 'center', padding: 20, gap: 16 },
-  noticeToneIconGlass: { width: 44, height: 44, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  noticeTitleTextLight: { fontSize: 16, color: '#1e293b', fontWeight: '700' },
-  noticeTimeTextLight: { fontSize: 12, color: 'rgba(30,41,59,0.4)', fontWeight: '600' },
-  noticeBody: { flex: 1, gap: 2 },
-  noticeTypeText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-  unreadDotLight: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#3b82f6' },
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 80, gap: 16 },
-  emptyTextLight: { fontSize: 15, color: 'rgba(30,41,59,0.4)', fontWeight: '600', textAlign: 'center' },
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 136,
+    gap: spacing.xl,
+  },
+  topGlow: {
+    position: 'absolute',
+    top: -110,
+    right: -80,
+    width: 300,
+    height: 300,
+    borderRadius: 999,
+    backgroundColor: 'rgba(111,214,255,0.11)',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  headerBody: {
+    flex: 1,
+    gap: 4,
+  },
+  kicker: {
+    color: colors.textMuted,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    fontFamily: typography.bodyBold,
+  },
+  title: {
+    fontSize: 34,
+    color: colors.textPrimary,
+    fontFamily: typography.displayHeavy,
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 21,
+    fontFamily: typography.bodyMedium,
+  },
+  syncText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: typography.bodySemibold,
+  },
+  counterBadge: {
+    minWidth: 82,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    ...shadows.soft,
+  },
+  counterValue: {
+    fontSize: 28,
+    color: colors.primaryDeep,
+    fontFamily: typography.displayBold,
+  },
+  counterLabel: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontFamily: typography.bodyBold,
+  },
+  summaryBlock: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.lg,
+    backgroundColor: 'rgba(255,255,255,0.84)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.soft,
+  },
+  summaryText: {
+    gap: 4,
+  },
+  summaryEyebrow: {
+    color: colors.textMuted,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    fontFamily: typography.bodyBold,
+  },
+  summaryTitle: {
+    color: colors.textPrimary,
+    fontSize: 26,
+    fontFamily: typography.displayBold,
+  },
+  summaryDescription: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: typography.bodyMedium,
+  },
+  summaryButton: {
+    alignSelf: 'flex-start',
+    minHeight: 46,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primaryDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryButtonDisabled: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  summaryButtonText: {
+    color: colors.textOnDark,
+    fontSize: 14,
+    fontFamily: typography.bodyBold,
+  },
+  summaryButtonTextDisabled: {
+    color: colors.textMuted,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  filterChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primaryDeep,
+    borderColor: colors.primaryDeep,
+  },
+  filterChipText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontFamily: typography.bodyBold,
+  },
+  filterChipTextActive: {
+    color: colors.textOnDark,
+  },
+  sectionBlock: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.lg,
+    backgroundColor: 'rgba(255,255,255,0.84)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.soft,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  sectionHeaderText: {
+    flex: 1,
+    gap: 4,
+  },
+  sectionEyebrow: {
+    color: colors.textMuted,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    fontFamily: typography.bodyBold,
+  },
+  sectionTitle: {
+    fontSize: 24,
+    color: colors.textPrimary,
+    fontFamily: typography.displayBold,
+  },
+  sectionMeta: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: typography.bodyBold,
+    paddingTop: 6,
+  },
+  emptyCard: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyIconShell: {
+    width: 58,
+    height: 58,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontFamily: typography.displayBold,
+  },
+  emptyDescription: {
+    color: colors.textSecondary,
+    textAlign: 'center',
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: typography.bodyMedium,
+  },
+  groupBlock: {
+    gap: spacing.sm,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  groupTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontFamily: typography.displayBold,
+  },
+  groupCount: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: typography.bodyBold,
+  },
+  groupList: {
+    gap: spacing.sm,
+  },
+  noticeCard: {
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.md,
+  },
+  noticeCardRead: {
+    opacity: 0.64,
+  },
+  noticeMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  noticeIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noticeBody: {
+    flex: 1,
+    gap: 3,
+  },
+  noticeType: {
+    fontSize: 11,
+    letterSpacing: 0.5,
+    fontFamily: typography.bodyBold,
+  },
+  noticeTitle: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 21,
+    fontFamily: typography.bodyBold,
+  },
+  noticeTime: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontFamily: typography.bodyMedium,
+  },
+  unreadDot: {
+    width: 10,
+    height: 10,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
+  },
+  noticeActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  actionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  actionChipDisabled: {
+    opacity: 0.5,
+  },
+  actionChipText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontFamily: typography.bodyBold,
+  },
 });

@@ -26,21 +26,23 @@ export function setCurrentHouseholdScope(householdId: string | null) {
 async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const token = useAuthStore.getState().token;
 
-  // Create an AbortController for a 10-second timeout
+  // Create an AbortController for a 10-second timeout.
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const requestInit = {
       method: options.method ?? 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : null),
+        ...(token ? { Authorization: `Bearer ${token}` } : null),
         ...(currentHouseholdScopeId ? { 'x-household-id': currentHouseholdScopeId } : null),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
-    });
+    } as RequestInit;
+
+    const response = await fetch(`${API_BASE_URL}${path}`, requestInit as any);
 
     clearTimeout(id);
 
@@ -88,6 +90,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
 
 export interface CreateInventoryItemPayload {
   name: string;
+  photoUri?: string;
   category: FridgeItem['category'];
   storageSpace?: FridgeItem['storageSpace'];
   expireAt?: string;
@@ -99,6 +102,7 @@ export interface CreateInventoryItemPayload {
 
 export interface UpdateInventoryItemPayload {
   name?: string;
+  photoUri?: string;
   category?: FridgeItem['category'];
   status?: FridgeItem['status'];
   storageSpace?: FridgeItem['storageSpace'];
@@ -138,6 +142,7 @@ function createMockInventoryItem(payload: CreateInventoryItemPayload): FridgeIte
     id: `${Date.now()}`,
     householdId: defaultMockHousehold.id,
     name: payload.name.trim(),
+    photoUri: payload.photoUri,
     category: payload.category,
     storageSpace: payload.storageSpace,
     status: 'active',
@@ -188,6 +193,7 @@ export const inventoryApi = {
       const updatedItem: FridgeItem = {
         ...currentItem,
         name: payload.name?.trim() ?? currentItem.name,
+        photoUri: payload.photoUri !== undefined ? payload.photoUri || undefined : currentItem.photoUri,
         category: payload.category ?? currentItem.category,
         storageSpace: payload.storageSpace !== undefined ? payload.storageSpace : currentItem.storageSpace,
         status: payload.status ?? currentItem.status,
@@ -262,7 +268,7 @@ export const householdApi = {
         {
           id: `member-${Date.now()}`,
           householdId: defaultMockHousehold.id,
-          userId: `guest-${Date.now()}`,
+          userId: `member-${Date.now()}`,
           role: 'member',
           status: 'active',
           nickname: nickname?.trim() || '我',
@@ -273,6 +279,19 @@ export const householdApi = {
     }
 
     return apiPost<Household>('/api/households/join', { inviteCode, nickname });
+  },
+};
+
+export const authApi = {
+  async sendCode(phone: string): Promise<{ success: boolean; message: string }> {
+    return apiPost('/api/auth/send-code', { phone });
+  },
+
+  async verifyCode(
+    phone: string,
+    code: string
+  ): Promise<{ success: boolean; token: string; user: { id: string; phone: string; nickname?: string; avatar?: string } }> {
+    return apiPost('/api/auth/verify-code', { phone, code });
   },
 };
 
@@ -295,21 +314,10 @@ export const noticeReadApi = {
         }),
         { ...noticeReadStateMockDb }
       );
-
       return Promise.resolve({ ...noticeReadStateMockDb });
     }
 
     const response = await apiPost<NoticeReadStateResponse>('/api/notices/read-state', { noticeIds });
     return response.noticeReadState;
-  },
-};
-
-export const authApi = {
-  async sendCode(phone: string): Promise<{ success: boolean; message: string }> {
-    return apiPost('/api/auth/send-code', { phone });
-  },
-
-  async verifyCode(phone: string, code: string): Promise<{ success: boolean; token: string; user: any }> {
-    return apiPost('/api/auth/verify-code', { phone, code });
   },
 };

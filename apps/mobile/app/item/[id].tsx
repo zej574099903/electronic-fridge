@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Stack, useLocalSearchParams, router } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/src/components/ScreenContainer';
-import { SectionCard } from '@/src/components/SectionCard';
-import { colors } from '@/src/constants/colors';
-import { formatStorageSpaceLabel } from '@/src/lib/expiry';
+import { colors, radii, shadows, spacing } from '@/src/constants/colors';
+import { typography } from '@/src/constants/typography';
+import { formatStorageSpaceLabel, getDaysUntilExpiration } from '@/src/lib/expiry';
 import { CreateFridgeItemInput, useInventoryStore } from '@/src/store/useInventoryStore';
 import { ItemCategory, ItemStatus, StorageSpace } from '@/src/types/item';
 
@@ -15,19 +16,31 @@ const statusLabelMap = {
   expired: '已过期',
 } as const;
 
+const categoryLabelMap: Record<ItemCategory, string> = {
+  ingredient: '食材',
+  fruit: '水果',
+  drink: '饮品',
+  dessert: '甜品',
+  snack: '零食',
+  leftover: '剩菜',
+  prepared: '熟食',
+  other: '其他',
+};
+
 const quickAddCategoryOptions: Array<{ label: string; value: ItemCategory }> = [
   { label: '食材', value: 'ingredient' },
   { label: '水果', value: 'fruit' },
+  { label: '饮品', value: 'drink' },
   { label: '甜品', value: 'dessert' },
   { label: '零食', value: 'snack' },
   { label: '剩菜', value: 'leftover' },
+  { label: '熟食', value: 'prepared' },
   { label: '其他', value: 'other' },
 ];
 
 const quickAddStorageOptions: Array<{ label: string; value: StorageSpace }> = [
   { label: '冷藏', value: 'chilled' },
   { label: '冷冻', value: 'frozen' },
-  { label: '常温', value: 'room_temp' },
   { label: '其他', value: 'other' },
 ];
 
@@ -42,6 +55,7 @@ export default function ItemDetailScreen() {
   const removeItem = useInventoryStore((state) => state.removeItem);
   const clearError = useInventoryStore((state) => state.clearError);
   const item = useMemo(() => items.find((currentItem) => currentItem.id === id), [id, items]);
+
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState<CreateFridgeItemInput>({
     name: '',
@@ -108,16 +122,12 @@ export default function ItemDetailScreen() {
     const actionText = statusLabelMap[status];
 
     Alert.alert('更新库存状态', `确定将「${item.name}」标记为${actionText}吗？`, [
-      {
-        text: '取消',
-        style: 'cancel',
-      },
+      { text: '取消', style: 'cancel' },
       {
         text: '确认',
         onPress: async () => {
           clearError();
           setEditError('');
-
           try {
             await updateItemStatus(item.id, status);
             setFeedbackMessage(`已更新状态：${actionText}`);
@@ -170,10 +180,7 @@ export default function ItemDetailScreen() {
     }
 
     Alert.alert('确认删除', `确定要删除「${item.name}」吗？`, [
-      {
-        text: '取消',
-        style: 'cancel',
-      },
+      { text: '取消', style: 'cancel' },
       {
         text: '删除',
         style: 'destructive',
@@ -192,73 +199,86 @@ export default function ItemDetailScreen() {
     ]);
   }
 
+  function toggleEdit() {
+    if (isEditing) {
+      resetEditDraft();
+      setEditError('');
+    }
+    setFeedbackMessage('');
+    setIsEditing((current) => !current);
+  }
+
   return (
     <ScreenContainer>
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.topGlow} />
+
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()}>
+          <Pressable onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="chevron-back-outline" size={18} color={colors.primaryDeep} />
             <Text style={styles.backText}>返回</Text>
           </Pressable>
-          <Text style={styles.title}>物品详情</Text>
+          <Text style={styles.pageEyebrow}>库存详情</Text>
+          <Text style={styles.pageTitle}>{item?.name ?? '物品详情'}</Text>
+          {item ? <Text style={styles.pageSubtitle}>{statusLabelMap[item.status]}</Text> : null}
         </View>
 
         {!item ? (
-          <SectionCard>
+          <View style={styles.sectionBlock}>
             <Text style={styles.emptyTitle}>未找到该物品</Text>
             <Text style={styles.emptyDescription}>可能已经被删除，或者库存数据尚未同步。</Text>
-          </SectionCard>
+          </View>
         ) : (
           <>
-            <SectionCard>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemMeta}>{statusLabelMap[item.status]}</Text>
-              {feedbackMessage ? <Text style={styles.successMessage}>{feedbackMessage}</Text> : null}
-              {editError ? <Text style={styles.errorMessage}>{editError}</Text> : null}
-            </SectionCard>
+            <HeroDecisionCard
+              itemName={item.name}
+              photoUri={item.photoUri}
+              status={item.status}
+              expireAt={item.expireAt}
+              daysUntilExpiration={getDaysUntilExpiration(item)}
+              storageSpace={item.storageSpace}
+            />
 
-            <SectionCard>
-              <Text style={styles.sectionTitle}>快捷处理</Text>
-              <View style={styles.actionRowWrap}>
-                {item.status === 'active' ? (
-                  <>
-                    <Pressable onPress={() => handleStatusUpdate('eaten')} style={styles.statusButton}>
-                      <Text style={styles.statusButtonText}>标记吃掉</Text>
-                    </Pressable>
-                    <Pressable onPress={() => handleStatusUpdate('discarded')} style={styles.statusButton}>
-                      <Text style={styles.statusButtonText}>标记丢弃</Text>
-                    </Pressable>
-                    <Pressable onPress={() => handleStatusUpdate('expired')} style={styles.statusButton}>
-                      <Text style={styles.statusButtonText}>标记过期</Text>
-                    </Pressable>
-                  </>
-                ) : (
-                  <Pressable onPress={() => handleStatusUpdate('active')} style={styles.statusButton}>
-                    <Text style={styles.statusButtonText}>恢复到库存中</Text>
-                  </Pressable>
-                )}
-                <Pressable onPress={handleDeleteItem} style={styles.deleteButton}>
-                  <Text style={styles.deleteButtonText}>删除物品</Text>
-                </Pressable>
-              </View>
-            </SectionCard>
+            {feedbackMessage ? <FeedbackBanner tone="success" text={feedbackMessage} /> : null}
+            {editError ? <FeedbackBanner tone="error" text={editError} /> : null}
 
-            <SectionCard>
+            <View style={styles.sectionBlock}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>基础信息</Text>
-                <Pressable
-                  onPress={() => {
-                    if (isEditing) {
-                      resetEditDraft();
-                    }
-                    setIsEditing((current) => !current);
-                    setEditError('');
-                    setFeedbackMessage('');
-                  }}
-                >
+                <View style={styles.sectionHeaderText}>
+                  <Text style={styles.sectionEyebrow}>主操作</Text>
+                  <Text style={styles.sectionTitle}>调整当前状态</Text>
+                </View>
+              </View>
+
+              {item.status === 'active' ? (
+                <View style={styles.primaryActionGrid}>
+                  <PrimaryActionCard icon="restaurant-outline" title="标记吃掉" description="这件食材已经处理完成。" color={colors.success} onPress={() => handleStatusUpdate('eaten')} />
+                  <PrimaryActionCard icon="trash-outline" title="标记丢弃" description="这条记录会退出当前库存。" color={colors.danger} onPress={() => handleStatusUpdate('discarded')} />
+                </View>
+              ) : (
+                <PrimaryActionCard icon="refresh-outline" title="恢复到库存中" description="如果刚才误操作，可以恢复回来。" color={colors.info} onPress={() => handleStatusUpdate('active')} />
+              )}
+
+              <View style={styles.secondaryActions}>
+                {item.status === 'active' ? (
+                  <MiniActionButton label="标记过期" icon="alert-circle-outline" color={colors.warning} onPress={() => handleStatusUpdate('expired')} />
+                ) : null}
+                <MiniActionButton label="删除记录" icon="close-outline" color={colors.textSecondary} onPress={handleDeleteItem} />
+              </View>
+            </View>
+
+            <View style={styles.sectionBlock}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionHeaderText}>
+                  <Text style={styles.sectionEyebrow}>记录信息</Text>
+                  <Text style={styles.sectionTitle}>基础字段</Text>
+                </View>
+                <Pressable onPress={toggleEdit}>
                   <Text style={styles.editLinkText}>{isEditing ? '收起编辑' : '编辑'}</Text>
                 </Pressable>
               </View>
+
               {isEditing ? (
                 <View style={styles.editPanel}>
                   <TextInput
@@ -276,7 +296,6 @@ export default function ItemDetailScreen() {
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                     {quickAddCategoryOptions.map((option) => {
                       const active = option.value === editDraft.category;
-
                       return (
                         <Pressable
                           key={`detail-category-${option.value}`}
@@ -291,7 +310,6 @@ export default function ItemDetailScreen() {
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                     {quickAddStorageOptions.map((option) => {
                       const active = option.value === editDraft.storageSpace;
-
                       return (
                         <Pressable
                           key={`detail-storage-${option.value}`}
@@ -347,43 +365,28 @@ export default function ItemDetailScreen() {
                     >
                       <Text style={styles.secondaryButtonText}>取消</Text>
                     </Pressable>
-                    <Pressable
-                      onPress={() => void handleSaveEdit()}
-                      disabled={isMutating}
-                      style={[styles.primaryButton, isMutating && styles.buttonDisabled]}
-                    >
+                    <Pressable onPress={() => void handleSaveEdit()} disabled={isMutating} style={[styles.primaryButton, isMutating && styles.buttonDisabled]}>
                       <Text style={styles.primaryButtonText}>{isMutating ? '保存中...' : '保存修改'}</Text>
                     </Pressable>
                   </View>
                 </View>
               ) : (
-                <>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>分类</Text>
-                    <Text style={styles.detailValue}>{item.category}</Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>位置</Text>
-                    <Text style={styles.detailValue}>{formatStorageSpaceLabel(item.storageSpace)}</Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>数量</Text>
-                    <Text style={styles.detailValue}>{item.quantity ?? 0}{item.quantityUnit ?? ''}</Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>到期</Text>
-                    <Text style={styles.detailValue}>{item.expireAt ?? '未设置'}</Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>备注</Text>
-                    <Text style={styles.detailValue}>{item.note ?? '暂无备注'}</Text>
-                  </View>
-                </>
+                <View style={styles.infoGrid}>
+                  <InfoCard label="状态" value={statusLabelMap[item.status]} />
+                  <InfoCard label="分类" value={categoryLabelMap[item.category]} />
+                  <InfoCard label="位置" value={formatStorageSpaceLabel(item.storageSpace)} />
+                  <InfoCard label="到期" value={item.expireAt ?? '未设置'} />
+                  <InfoCard label="数量" value={item.quantity ? `${item.quantity}${item.quantityUnit ?? ''}` : '--'} />
+                  <InfoCard label="备注" value={item.note ?? '暂无备注'} fullWidth />
+                </View>
               )}
-            </SectionCard>
+            </View>
 
-            <SectionCard>
-              <Text style={styles.sectionTitle}>时间信息</Text>
+            <View style={styles.sectionBlock}>
+              <View style={styles.sectionHeaderText}>
+                <Text style={styles.sectionEyebrow}>时间信息</Text>
+                <Text style={styles.sectionTitle}>记录轨迹</Text>
+              </View>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>创建时间</Text>
                 <Text style={styles.detailValue}>{item.createdAt ?? '未知'}</Text>
@@ -392,13 +395,10 @@ export default function ItemDetailScreen() {
                 <Text style={styles.detailLabel}>更新时间</Text>
                 <Text style={styles.detailValue}>{item.updatedAt ?? '未知'}</Text>
               </View>
-            </SectionCard>
+            </View>
 
-            <Pressable
-              onPress={() => router.push({ pathname: '/(tabs)/inventory', params: { itemId: item.id } })}
-              style={styles.actionButton}
-            >
-              <Text style={styles.actionText}>回到库存页处理</Text>
+            <Pressable onPress={() => router.push({ pathname: '/(tabs)/inventory', params: { itemId: item.id } })} style={styles.bottomActionButton}>
+              <Text style={styles.bottomActionText}>回到库存列表定位这件食材</Text>
             </Pressable>
           </>
         )}
@@ -407,173 +407,475 @@ export default function ItemDetailScreen() {
   );
 }
 
+function HeroDecisionCard({
+  itemName,
+  photoUri,
+  status,
+  expireAt,
+  daysUntilExpiration,
+  storageSpace,
+}: {
+  itemName: string;
+  photoUri?: string;
+  status: ItemStatus;
+  expireAt?: string;
+  daysUntilExpiration: number | null;
+  storageSpace?: StorageSpace;
+}) {
+  const decision = getDecisionState(status, daysUntilExpiration);
+
+  return (
+    <View style={[styles.heroCard, { backgroundColor: decision.backgroundColor }]}> 
+      {photoUri ? (
+        <Image source={{ uri: photoUri }} style={styles.heroPhoto} />
+      ) : (
+        <View style={styles.heroPhotoFallback}>
+          <Ionicons name="image-outline" size={30} color={colors.textMuted} />
+        </View>
+      )}
+      <View style={styles.heroTopRow}>
+        <View style={[styles.heroIconWrap, { backgroundColor: `${decision.color}18` }]}> 
+          <Ionicons name={decision.icon} size={22} color={decision.color} />
+        </View>
+        <View style={styles.heroTextGroup}>
+          <Text style={styles.heroKicker}>{statusLabelMap[status]}</Text>
+          <Text style={styles.heroTitle}>{itemName}</Text>
+        </View>
+      </View>
+      <Text style={[styles.heroDecisionTitle, { color: decision.color }]}>{decision.title}</Text>
+      <Text style={styles.heroDecisionDescription}>{decision.description}</Text>
+      <View style={styles.heroMetaRow}>
+        <HeroPill icon="calendar-outline" text={expireAt ?? '未设置日期'} />
+        <HeroPill icon="snow-outline" text={formatStorageSpaceLabel(storageSpace)} />
+      </View>
+    </View>
+  );
+}
+
+function HeroPill({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
+  return (
+    <View style={styles.heroPill}>
+      <Ionicons name={icon} size={14} color={colors.textSecondary} />
+      <Text style={styles.heroPillText}>{text}</Text>
+    </View>
+  );
+}
+
+function FeedbackBanner({ tone, text }: { tone: 'success' | 'error'; text: string }) {
+  return (
+    <View style={[styles.feedbackBanner, tone === 'success' ? styles.feedbackBannerSuccess : styles.feedbackBannerError]}>
+      <Text style={[styles.feedbackText, tone === 'success' ? styles.feedbackTextSuccess : styles.feedbackTextError]}>{text}</Text>
+    </View>
+  );
+}
+
+function PrimaryActionCard({
+  icon,
+  title,
+  description,
+  color,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+  color: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.primaryActionCard}>
+      <View style={[styles.primaryActionIcon, { backgroundColor: `${color}18` }]}> 
+        <Ionicons name={icon} size={18} color={color} />
+      </View>
+      <View style={styles.primaryActionBody}>
+        <Text style={styles.primaryActionTitle}>{title}</Text>
+        <Text style={styles.primaryActionDescription}>{description}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function MiniActionButton({
+  label,
+  icon,
+  color,
+  onPress,
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.miniActionButton}>
+      <Ionicons name={icon} size={16} color={color} />
+      <Text style={styles.miniActionButtonText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function InfoCard({ label, value, fullWidth = false }: { label: string; value: string; fullWidth?: boolean }) {
+  return (
+    <View style={[styles.infoCard, fullWidth && styles.infoCardFull]}>
+      <Text style={styles.infoCardLabel}>{label}</Text>
+      <Text style={styles.infoCardValue}>{value}</Text>
+    </View>
+  );
+}
+
+function getDecisionState(status: ItemStatus, daysUntilExpiration: number | null) {
+  if (status === 'eaten') {
+    return {
+      title: '已处理',
+      description: '这条记录会继续保留在归档里。',
+      color: colors.success,
+      backgroundColor: '#F3FBF8',
+      icon: 'checkmark-done-outline' as const,
+    };
+  }
+
+  if (status === 'discarded' || status === 'expired') {
+    return {
+      title: '已退出库存',
+      description: '如果是误操作，可以恢复到库存中。',
+      color: colors.danger,
+      backgroundColor: '#FFF5F3',
+      icon: 'warning-outline' as const,
+    };
+  }
+
+  if (daysUntilExpiration === null) {
+    return {
+      title: '待补日期',
+      description: '补一个到期时间后，提醒会更准确。',
+      color: colors.info,
+      backgroundColor: '#F4F8FC',
+      icon: 'time-outline' as const,
+    };
+  }
+
+  if (daysUntilExpiration < 0) {
+    return {
+      title: '已经过期',
+      description: '建议尽快确认状态并处理。',
+      color: colors.danger,
+      backgroundColor: '#FFF5F3',
+      icon: 'alert-circle-outline' as const,
+    };
+  }
+
+  if (daysUntilExpiration === 0) {
+    return {
+      title: '今天到期',
+      description: '适合今天优先安排掉。',
+      color: colors.danger,
+      backgroundColor: '#FFF8F4',
+      icon: 'flash-outline' as const,
+    };
+  }
+
+  if (daysUntilExpiration === 1) {
+    return {
+      title: '明天到期',
+      description: '建议提前处理，避免忘记。',
+      color: colors.warning,
+      backgroundColor: '#FFF9EF',
+      icon: 'moon-outline' as const,
+    };
+  }
+
+  return {
+    title: `还能放 ${daysUntilExpiration} 天`,
+    description: '当前状态稳定。',
+    color: colors.success,
+    backgroundColor: '#F2FBF8',
+    icon: 'leaf-outline' as const,
+  };
+}
+
 const styles = StyleSheet.create({
   content: {
-    padding: 20,
-    gap: 24,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 136,
+    gap: spacing.xl,
+  },
+  topGlow: {
+    position: 'absolute',
+    top: -110,
+    right: -80,
+    width: 300,
+    height: 300,
+    borderRadius: 999,
+    backgroundColor: 'rgba(111,214,255,0.11)',
   },
   header: {
-    gap: 12,
-    paddingVertical: 12,
+    gap: spacing.xs,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    paddingVertical: 6,
   },
   backText: {
-    fontSize: 16,
-    color: colors.secondary,
-    fontWeight: '700',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '800',
+    fontSize: 14,
     color: colors.primary,
-    letterSpacing: -0.5,
+    fontFamily: typography.bodyBold,
   },
-  itemName: {
-    fontSize: 24,
-    fontWeight: '800',
+  pageEyebrow: {
+    color: colors.textMuted,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    fontFamily: typography.bodyBold,
+  },
+  pageTitle: {
+    fontSize: 34,
     color: colors.textPrimary,
+    fontFamily: typography.displayHeavy,
   },
-  itemMeta: {
+  pageSubtitle: {
+    color: colors.textSecondary,
     fontSize: 14,
-    color: colors.secondary,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontFamily: typography.bodyMedium,
   },
-  successMessage: {
-    marginTop: 12,
+  heroCard: {
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.md,
+    ...shadows.card,
+  },
+  heroPhoto: {
+    width: '100%',
+    height: 220,
+    borderRadius: radii.md,
+  },
+  heroPhotoFallback: {
+    width: '100%',
+    height: 220,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  heroIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTextGroup: {
+    flex: 1,
+    gap: 2,
+  },
+  heroKicker: {
+    fontSize: 11,
+    color: colors.textMuted,
+    letterSpacing: 1,
+    fontFamily: typography.bodyBold,
+  },
+  heroTitle: {
+    fontSize: 28,
+    color: colors.textPrimary,
+    fontFamily: typography.displayBold,
+  },
+  heroDecisionTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontFamily: typography.displayBold,
+  },
+  heroDecisionDescription: {
+    color: colors.textSecondary,
     fontSize: 14,
+    lineHeight: 21,
+    fontFamily: typography.bodyMedium,
+  },
+  heroMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  heroPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
+    backgroundColor: 'rgba(255,255,255,0.62)',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  heroPillText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontFamily: typography.bodyBold,
+  },
+  feedbackBanner: {
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  feedbackBannerSuccess: {
+    backgroundColor: '#EFFAF6',
+  },
+  feedbackBannerError: {
+    backgroundColor: '#FFF3F1',
+  },
+  feedbackText: {
+    fontSize: 13,
+    fontFamily: typography.bodyBold,
+  },
+  feedbackTextSuccess: {
     color: colors.success,
-    fontWeight: '700',
-    backgroundColor: '#F0FDF4',
-    padding: 12,
-    borderRadius: 14,
-    textAlign: 'center',
   },
-  errorMessage: {
-    marginTop: 12,
-    fontSize: 14,
+  feedbackTextError: {
     color: colors.danger,
-    fontWeight: '700',
-    backgroundColor: '#FEF2F2',
-    padding: 12,
-    borderRadius: 14,
-    textAlign: 'center',
+  },
+  sectionBlock: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.lg,
+    backgroundColor: 'rgba(255,255,255,0.84)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.soft,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  sectionHeaderText: {
+    flex: 1,
+    gap: 4,
+  },
+  sectionEyebrow: {
+    color: colors.textMuted,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    fontFamily: typography.bodyBold,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 24,
     color: colors.textPrimary,
+    fontFamily: typography.displayBold,
   },
-  editLinkText: {
-    fontSize: 14,
-    color: colors.secondary,
-    fontWeight: '700',
+  primaryActionGrid: {
+    gap: spacing.sm,
   },
-  actionRowWrap: {
+  primaryActionCard: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  statusButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1.5,
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
     borderColor: colors.border,
   },
-  statusButtonText: {
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  deleteButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  primaryActionIcon: {
+    width: 44,
+    height: 44,
     borderRadius: 14,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.danger,
-  },
-  deleteButtonText: {
-    fontSize: 14,
-    color: colors.danger,
-    fontWeight: '700',
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    justifyContent: 'center',
   },
-  detailLabel: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    fontWeight: '500',
+  primaryActionBody: {
+    flex: 1,
+    gap: 4,
   },
-  detailValue: {
-    fontSize: 15,
+  primaryActionTitle: {
     color: colors.textPrimary,
-    fontWeight: '700',
+    fontSize: 16,
+    fontFamily: typography.bodyBold,
   },
-  emptyTitle: {
-    fontSize: 18,
-    color: colors.textPrimary,
-    fontWeight: '800',
-  },
-  emptyDescription: {
-    fontSize: 15,
+  primaryActionDescription: {
     color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: typography.bodyMedium,
+  },
+  secondaryActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  miniActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  miniActionButtonText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontFamily: typography.bodyBold,
+  },
+  editLinkText: {
+    fontSize: 13,
+    color: colors.primary,
+    fontFamily: typography.bodyBold,
+    paddingTop: 6,
   },
   editPanel: {
-    gap: 16,
-    marginTop: 8,
+    gap: spacing.md,
   },
   input: {
     backgroundColor: colors.surfaceAlt,
-    borderRadius: 18,
-    borderWidth: 1.5,
+    borderRadius: radii.md,
+    borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: 16,
     paddingVertical: 16,
-    fontSize: 16,
+    fontSize: 15,
     color: colors.textPrimary,
+    fontFamily: typography.bodyMedium,
   },
   filterRow: {
-    gap: 10,
+    gap: spacing.sm,
     paddingVertical: 4,
   },
   filterChip: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
+    paddingVertical: 11,
+    borderRadius: radii.pill,
     backgroundColor: colors.surface,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.border,
   },
   filterChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.primaryDeep,
+    borderColor: colors.primaryDeep,
   },
   filterChipText: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.textSecondary,
-    fontWeight: '600',
+    fontFamily: typography.bodyBold,
   },
   filterChipTextActive: {
-    color: colors.surface,
+    color: colors.textOnDark,
   },
   inlineInputs: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.sm,
   },
   flexInput: {
     flex: 1,
@@ -583,52 +885,110 @@ const styles = StyleSheet.create({
   },
   editActions: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
+    gap: spacing.sm,
+    marginTop: 4,
   },
   secondaryButton: {
     flex: 1,
-    borderRadius: 18,
-    borderWidth: 1.5,
+    minHeight: 50,
+    borderRadius: radii.pill,
+    borderWidth: 1,
     borderColor: colors.border,
-    paddingVertical: 16,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
   },
   secondaryButtonText: {
     color: colors.textPrimary,
-    fontWeight: '700',
-    fontSize: 16,
+    fontSize: 14,
+    fontFamily: typography.bodyBold,
   },
   primaryButton: {
     flex: 1,
-    borderRadius: 18,
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
+    minHeight: 50,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primaryDeep,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   primaryButtonText: {
-    color: colors.surface,
-    fontWeight: '800',
-    fontSize: 16,
+    color: colors.textOnDark,
+    fontSize: 14,
+    fontFamily: typography.bodyBold,
   },
   buttonDisabled: {
-    opacity: 0.5,
+    opacity: 0.55,
   },
-  actionButton: {
-    backgroundColor: colors.secondary,
-    borderRadius: 20,
-    paddingVertical: 18,
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  infoCard: {
+    width: '48%',
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: 8,
+  },
+  infoCardFull: {
+    width: '100%',
+  },
+  infoCardLabel: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: typography.bodyBold,
+  },
+  infoCardValue: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 21,
+    fontFamily: typography.bodyBold,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    shadowColor: colors.secondary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 4,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  actionText: {
-    color: colors.surface,
-    fontWeight: '800',
-    fontSize: 16,
-    letterSpacing: 0.5,
+  detailLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontFamily: typography.bodyMedium,
+  },
+  detailValue: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    maxWidth: '55%',
+    textAlign: 'right',
+    fontFamily: typography.bodyBold,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    color: colors.textPrimary,
+    fontFamily: typography.displayBold,
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 21,
+    fontFamily: typography.bodyMedium,
+  },
+  bottomActionButton: {
+    minHeight: 54,
+    backgroundColor: colors.primaryDeep,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.soft,
+  },
+  bottomActionText: {
+    color: colors.textOnDark,
+    fontSize: 14,
+    fontFamily: typography.bodyBold,
   },
 });

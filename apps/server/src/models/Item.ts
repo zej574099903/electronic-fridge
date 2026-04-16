@@ -13,6 +13,10 @@ const itemSchema = new Schema(
       required: true,
       trim: true,
     },
+    photoUri: {
+      type: String,
+      trim: true,
+    },
     category: {
       type: String,
       required: true,

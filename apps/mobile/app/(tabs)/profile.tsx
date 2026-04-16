@@ -1,33 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
-import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
-import { ScreenContainer } from '@/src/components/ScreenContainer';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '@/src/constants/colors';
-import { useInventoryStore } from '@/src/store/useInventoryStore';
-import { useAuthStore } from '@/src/store/useAuthStore';
-import * as Updates from 'expo-updates';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import * as Updates from 'expo-updates';
+import { ScreenContainer } from '@/src/components/ScreenContainer';
+import { colors, radii, shadows, spacing } from '@/src/constants/colors';
+import { typography } from '@/src/constants/typography';
+import { useAuthStore } from '@/src/store/useAuthStore';
+import { formatLastSyncedAt, useInventoryStore } from '@/src/store/useInventoryStore';
 
 export default function ProfileTabScreen() {
-  const insets = useSafeAreaInsets();
   const initialized = useInventoryStore((state) => state.initialized);
   const isMutating = useInventoryStore((state) => state.isMutating);
   const currentHousehold = useInventoryStore((state) => state.currentHousehold);
   const householdMembers = useInventoryStore((state) => state.householdMembers);
   const items = useInventoryStore((state) => state.items);
+  const lastSyncedAt = useInventoryStore((state) => state.lastSyncedAt);
   const fetchItems = useInventoryStore((state) => state.fetchItems);
   const createHousehold = useInventoryStore((state) => state.createHousehold);
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
 
-  const activeItems = items.filter((item) => item.status === 'active');
   const [createName, setCreateName] = useState('');
   const [familyMessage, setFamilyMessage] = useState('');
   const [familyError, setFamilyError] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const activeItems = useMemo(() => items.filter((item) => item.status === 'active'), [items]);
+  const userLabel = user?.nickname ?? user?.phone?.slice(-4)?.padStart(4, '*') ?? '冰箱用户';
+  const syncText = formatLastSyncedAt(lastSyncedAt);
 
   useEffect(() => {
     if (!initialized) {
@@ -49,20 +52,23 @@ export default function ProfileTabScreen() {
       setFamilyError('请先填写家庭名称');
       return;
     }
+
     setFamilyError('');
+    setFamilyMessage('');
+
     try {
-      await createHousehold(createName);
-      setFamilyMessage(`已创建家庭：${createName.trim()}`);
+      await createHousehold(createName.trim());
+      setFamilyMessage(`已创建 ${createName.trim()}`);
       setCreateName('');
     } catch {
-      setFamilyError('创建家庭失败，请稍后再试');
+      setFamilyError('创建失败，请稍后再试');
     }
   }
 
   async function handleCheckUpdates() {
     const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
     if (isExpoGo) {
-      Alert.alert('提示', '您当前正在使用 Expo Go。同步最新代码的方法是：\n\n1. 杀掉 App 进程并重启\n2. 在 Expo Go 首页下拉刷新项目列表\n3. 重新进入项目即可', [{ text: '知道了' }]);
+      Alert.alert('Expo Go 提示', '当前运行在 Expo Go 中，重新扫码进入项目即可拿到最新代码。');
       return;
     }
     if (!Updates.isEnabled) {
@@ -71,181 +77,387 @@ export default function ProfileTabScreen() {
     }
     try {
       const update = await Updates.checkForUpdateAsync();
-      if (update.isAvailable) {
-        Alert.alert('发现新版本', '已经准备好新代码包，是否立即安装并重启应用？', [
-          { text: '稍后', style: 'cancel' },
-          {
-            text: '立即安装',
-            onPress: async () => {
-              try {
-                await Updates.fetchUpdateAsync();
-                await Updates.reloadAsync();
-              } catch (e) {
-                Alert.alert('安装失败', '无法下载更新。');
-              }
+      if (!update.isAvailable) {
+        Alert.alert('提示', '当前已经是最新版本。');
+        return;
+      }
+      Alert.alert('发现更新', '检测到新的代码包，是否现在安装并重启？', [
+        { text: '稍后', style: 'cancel' },
+        {
+          text: '立即安装',
+          onPress: async () => {
+            try {
+              await Updates.fetchUpdateAsync();
+              await Updates.reloadAsync();
+            } catch {
+              Alert.alert('安装失败', '暂时无法下载更新。');
             }
           },
-        ]);
-      } else {
-        Alert.alert('提示', '当前已是最新同步版本！');
-      }
-    } catch (error) {
-      Alert.alert('检查失败', '无法连接服务器');
+        },
+      ]);
+    } catch {
+      Alert.alert('检查失败', '暂时无法连接更新服务。');
     }
   }
 
   return (
-    <ScreenContainer edges={['left', 'right']} style={{ backgroundColor: 'transparent' }}>
-      <StatusBar style="dark" translucent />
-      <View style={StyleSheet.absoluteFill}>
-        <Image source={require('../../assets/branding/arctic_bg_v3_light.png')} style={StyleSheet.absoluteFill} resizeMode="cover" blurRadius={10} />
-        <LinearGradient colors={['rgba(255,255,255,0.4)', 'rgba(255,255,255,0.1)', 'rgba(255,255,255,0.6)']} style={StyleSheet.absoluteFill} />
-      </View>
-
+    <ScreenContainer>
+      <StatusBar style="dark" />
       <ScrollView
-        contentContainerStyle={[styles.content, { backgroundColor: 'transparent' }]}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor="#1e293b" />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} />}
       >
-        <View style={styles.heroTransparent}>
-          <View style={[styles.profileHeader, { paddingTop: insets.top + 16 }]}>
-            <View style={styles.avatarContainer}>
-              <View style={styles.avatarGlowLight}>
-                <View style={styles.avatarLight}>
-                  <Text style={styles.avatarTextLight}>周</Text>
-                </View>
-              </View>
-            </View>
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileNameLight}>极地用户</Text>
-              <Text style={styles.profileMetaLight}>全铝极效冷链 · 环境健康运行中</Text>
-            </View>
-          </View>
+        <View style={styles.topGlow} />
 
-          <View style={styles.impactGrid}>
-            <BlurView intensity={80} tint="light" style={styles.impactCardGlass}>
-              <Text style={styles.impactValueLight}>{activeItems.length}</Text>
-              <Text style={styles.impactLabelLight}>当前库存</Text>
-            </BlurView>
-            <View style={styles.impactDividerLight} />
-            <BlurView intensity={80} tint="light" style={styles.impactCardGlass}>
-              <Text style={styles.impactValueLight}>{householdMembers.length}</Text>
-              <Text style={styles.impactLabelLight}>家庭成员</Text>
-            </BlurView>
-            <View style={styles.impactDividerLight} />
-            <BlurView intensity={80} tint="light" style={styles.impactCardGlass}>
-              <Text style={styles.impactValueLight}>98%</Text>
-              <Text style={styles.impactLabelLight}>保鲜率</Text>
-            </BlurView>
+        <View style={styles.header}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{userLabel.slice(0, 1)}</Text>
+          </View>
+          <View style={styles.headerBody}>
+            <Text style={styles.kicker}>我的</Text>
+            <Text style={styles.title}>{userLabel}</Text>
+            <Text style={styles.subtitle}>家庭、同步与运行信息</Text>
+            <Text style={styles.syncText}>{syncText}</Text>
           </View>
         </View>
 
-        <View style={styles.mainContent}>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitleLight}>家庭空间</Text>
-            <BlurView intensity={80} tint="light" style={styles.settingsGroupGlass}>
-              <View style={styles.menuRowGlass}>
-                <View style={styles.menuLeft}>
-                  <Ionicons name="home-outline" size={20} color="#3b82f6" />
-                  <Text style={styles.menuLabelLight}>当前家庭</Text>
-                </View>
-                <Text style={styles.menuValueLight}>{currentHousehold?.name ?? '加载中...'}</Text>
-              </View>
-              <View style={[styles.menuRowGlass, { borderBottomWidth: 0 }]}>
-                <View style={styles.menuLeft}>
-                  <Ionicons name="key-outline" size={20} color="#f59e0b" />
-                  <Text style={styles.menuLabelLight}>邀请码</Text>
-                </View>
-                <Text style={styles.menuValueSelectableLight}>{currentHousehold?.inviteCode ?? '暂无'}</Text>
-              </View>
-            </BlurView>
+        <View style={styles.metricsRow}>
+          <ProfileMetric value={activeItems.length} label="库存" />
+          <ProfileMetric value={householdMembers.length} label="成员" />
+          <ProfileMetric value={currentHousehold?.inviteCode ?? '--'} label="邀请码" compact />
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeaderText}>
+            <Text style={styles.sectionEyebrow}>家庭空间</Text>
+            <Text style={styles.sectionTitle}>当前协作信息</Text>
+          </View>
+          <InfoRow icon="home-outline" label="当前家庭" value={currentHousehold?.name ?? '加载中...'} />
+          <InfoRow icon="people-outline" label="成员人数" value={`${householdMembers.length} 人`} />
+          <InfoRow icon="mail-open-outline" label="邀请码" value={currentHousehold?.inviteCode ?? '暂无'} noBorder />
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeaderText}>
+            <Text style={styles.sectionEyebrow}>新建家庭</Text>
+            <Text style={styles.sectionTitle}>建立新的共享空间</Text>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitleLight}>运行状态</Text>
-            <BlurView intensity={80} tint="light" style={styles.settingsGroupGlass}>
-              <View style={styles.menuRowGlass}>
-                <View style={styles.menuLeft}>
-                  <Ionicons name="hardware-chip-outline" size={20} color="#94a3b8" />
-                  <Text style={styles.menuLabelLight}>底层版本</Text>
-                </View>
-                <Text style={styles.menuValueLight}>v0.2.0 Arctic</Text>
-              </View>
-              <Pressable onPress={() => void handleCheckUpdates()} style={[styles.menuRowGlass, { borderBottomWidth: 0 }]}>
-                <View style={styles.menuLeft}>
-                  <Ionicons name="cloud-download-outline" size={20} color="#3b82f6" />
-                  <Text style={styles.menuLabelLight}>同步最新代码</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="rgba(30,41,59,0.3)" />
-              </Pressable>
-            </BlurView>
-          </View>
+          {familyMessage ? <FeedbackText tone="success" text={familyMessage} /> : null}
+          {familyError ? <FeedbackText tone="error" text={familyError} /> : null}
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitleLight}>管理中心</Text>
-            <BlurView intensity={80} tint="light" style={styles.actionCardGlass}>
-              <TextInput value={createName} onChangeText={setCreateName} placeholder="创建新空间 (如：合租公寓)" placeholderTextColor="rgba(30,41,59,0.4)" style={styles.inputLight} />
-              <Pressable onPress={() => void handleCreateHousehold()} disabled={isMutating} style={[styles.primaryButtonLight, isMutating && styles.buttonDisabled]}>
-                <Text style={styles.primaryButtonTextLight}>快速同步空间</Text>
-              </Pressable>
-            </BlurView>
-          </View>
-
-          <Pressable
-            onPress={() => {
-              Alert.alert('退出登录', '确定要重启并退出身份验证吗？', [
-                { text: '取消', style: 'cancel' },
-                {
-                  text: '确认退出',
-                  style: 'destructive',
-                  onPress: () => {
-                    useAuthStore.getState().logout();
-                    router.replace('/(auth)/login');
-                  }
-                },
-              ]);
+          <TextInput
+            value={createName}
+            onChangeText={(value) => {
+              setCreateName(value);
+              setFamilyError('');
             }}
-            style={styles.logoutButtonLight}
-          >
-            <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-            <Text style={styles.logoutTextLight}>安全退出极地空间</Text>
+            placeholder="例如：合租厨房 / 父母家"
+            placeholderTextColor={colors.textMuted}
+            style={styles.input}
+          />
+          <Pressable onPress={() => void handleCreateHousehold()} disabled={isMutating} style={[styles.primaryButton, isMutating && styles.buttonDisabled]}>
+            <Text style={styles.primaryButtonText}>{isMutating ? '创建中...' : '创建家庭空间'}</Text>
           </Pressable>
         </View>
+
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeaderText}>
+            <Text style={styles.sectionEyebrow}>运行与同步</Text>
+            <Text style={styles.sectionTitle}>当前环境</Text>
+          </View>
+          <Pressable onPress={() => void handleCheckUpdates()} style={styles.actionRow}>
+            <View style={styles.actionLeft}>
+              <Ionicons name="cloud-download-outline" size={18} color={colors.primary} />
+              <Text style={styles.actionText}>检查最新代码</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </Pressable>
+          <View style={[styles.actionRow, styles.actionRowStatic]}>
+            <View style={styles.actionLeft}>
+              <Ionicons name="hardware-chip-outline" size={18} color={colors.textSecondary} />
+              <Text style={styles.actionText}>当前版本</Text>
+            </View>
+            <Text style={styles.actionValue}>v0.2.0 Arctic</Text>
+          </View>
+        </View>
+
+        <Pressable
+          onPress={() => {
+            Alert.alert('退出登录', '确定要退出当前账号吗？', [
+              { text: '取消', style: 'cancel' },
+              {
+                text: '退出',
+                style: 'destructive',
+                onPress: () => {
+                  logout();
+                  router.replace('/(auth)/login');
+                },
+              },
+            ]);
+          }}
+          style={styles.logoutButton}
+        >
+          <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+          <Text style={styles.logoutText}>退出当前账号</Text>
+        </Pressable>
       </ScrollView>
     </ScreenContainer>
   );
 }
 
+function ProfileMetric({ value, label, compact = false }: { value: string | number; label: string; compact?: boolean }) {
+  return (
+    <View style={styles.metricCard}>
+      <Text style={[styles.metricValue, compact && styles.metricValueCompact]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function FeedbackText({ tone, text }: { tone: 'success' | 'error'; text: string }) {
+  return <Text style={[styles.feedbackText, tone === 'success' ? styles.feedbackSuccess : styles.feedbackError]}>{text}</Text>;
+}
+
+function InfoRow({
+  icon,
+  label,
+  value,
+  noBorder = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  noBorder?: boolean;
+}) {
+  return (
+    <View style={[styles.infoRow, noBorder && styles.infoRowNoBorder]}>
+      <View style={styles.actionLeft}>
+        <Ionicons name={icon} size={18} color={colors.primary} />
+        <Text style={styles.infoLabel}>{label}</Text>
+      </View>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  content: { paddingBottom: 150 },
-  mainContent: { paddingHorizontal: 20, marginTop: -30, gap: 20 },
-  heroTransparent: { padding: 24, paddingTop: 40, paddingBottom: 40, gap: 32 },
-  profileHeader: { alignItems: 'center', gap: 16 },
-  avatarContainer: { justifyContent: 'center', alignItems: 'center' },
-  avatarGlowLight: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(30,41,59,0.05)', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(30,41,59,0.1)' },
-  avatarLight: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#1e293b', justifyContent: 'center', alignItems: 'center', shadowColor: '#1e293b', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 8 },
-  avatarTextLight: { fontSize: 32, fontWeight: '800', color: '#fff' },
-  profileInfo: { alignItems: 'center', gap: 4 },
-  profileNameLight: { fontSize: 26, fontWeight: '800', color: '#1e293b', letterSpacing: -0.5 },
-  profileMetaLight: { fontSize: 13, color: 'rgba(30,41,59,0.5)', fontWeight: '600' },
-  impactGrid: { flexDirection: 'row', marginTop: 32, alignItems: 'center' },
-  impactCardGlass: { flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderTopColor: 'rgba(255,255,255,0.4)', borderLeftColor: 'rgba(255,255,255,0.2)', borderRightColor: 'rgba(0,0,0,0.1)', borderBottomColor: 'rgba(0,0,0,0.2)' },
-  impactValueLight: { fontSize: 24, fontWeight: '800', color: '#1e293b' },
-  impactLabelLight: { fontSize: 10, color: 'rgba(30,41,59,0.4)', fontWeight: '700', textTransform: 'uppercase', marginTop: 2, letterSpacing: 1 },
-  impactDividerLight: { width: 1, height: 20, backgroundColor: 'rgba(30,41,59,0.1)', marginHorizontal: 8 },
-  section: { gap: 12 },
-  sectionTitleLight: { fontSize: 13, color: 'rgba(30,41,59,0.4)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginLeft: 12 },
-  settingsGroupGlass: { borderRadius: 32, overflow: 'hidden', borderWidth: 1, borderTopColor: 'rgba(255,255,255,0.4)', borderLeftColor: 'rgba(255,255,255,0.2)', borderRightColor: 'rgba(0,0,0,0.1)', borderBottomColor: 'rgba(0,0,0,0.2)' },
-  menuRowGlass: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: 'rgba(30,41,59,0.05)' },
-  menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  menuLabelLight: { fontSize: 15, color: '#1e293b', fontWeight: '700' },
-  menuValueLight: { fontSize: 14, color: 'rgba(30,41,59,0.5)', fontWeight: '600' },
-  menuValueSelectableLight: { fontSize: 14, color: '#3b82f6', fontWeight: '800', letterSpacing: 1 },
-  actionCardGlass: { borderRadius: 32, padding: 24, overflow: 'hidden', borderWidth: 1, borderTopColor: 'rgba(255,255,255,0.4)', borderLeftColor: 'rgba(255,255,255,0.2)', borderRightColor: 'rgba(0,0,0,0.1)', borderBottomColor: 'rgba(0,0,0,0.2)', gap: 16 },
-  inputLight: { backgroundColor: 'rgba(30,41,59,0.05)', borderRadius: 18, padding: 16, fontSize: 15, color: '#1e293b', borderWidth: 1, borderColor: 'rgba(30,41,59,0.1)' },
-  primaryButtonLight: { backgroundColor: '#1e293b', borderRadius: 18, padding: 18, alignItems: 'center', shadowColor: '#1e293b', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 4 },
-  primaryButtonTextLight: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  buttonDisabled: { opacity: 0.5 },
-  logoutButtonLight: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12, marginBottom: 40, paddingVertical: 20, borderRadius: 32, backgroundColor: 'rgba(239,68,68,0.05)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.1)' },
-  logoutTextLight: { color: '#ef4444', fontWeight: '800', fontSize: 15 },
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 136,
+    gap: spacing.xl,
+  },
+  topGlow: {
+    position: 'absolute',
+    top: -115,
+    right: -78,
+    width: 300,
+    height: 300,
+    borderRadius: 999,
+    backgroundColor: 'rgba(111,214,255,0.11)',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  avatar: {
+    width: 74,
+    height: 74,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primaryDeep,
+    ...shadows.soft,
+  },
+  avatarText: {
+    color: colors.textOnDark,
+    fontSize: 28,
+    fontFamily: typography.displayBold,
+  },
+  headerBody: {
+    flex: 1,
+    gap: 4,
+  },
+  kicker: {
+    color: colors.textMuted,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    fontFamily: typography.bodyBold,
+  },
+  title: {
+    color: colors.textPrimary,
+    fontSize: 32,
+    fontFamily: typography.displayHeavy,
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: typography.bodyMedium,
+  },
+  syncText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: typography.bodySemibold,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  metricCard: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    gap: 2,
+    ...shadows.soft,
+  },
+  metricValue: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontFamily: typography.displayBold,
+  },
+  metricValueCompact: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  metricLabel: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: typography.bodyBold,
+  },
+  sectionBlock: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.lg,
+    backgroundColor: 'rgba(255,255,255,0.84)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.soft,
+  },
+  sectionHeaderText: {
+    gap: 4,
+  },
+  sectionEyebrow: {
+    color: colors.textMuted,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    fontFamily: typography.bodyBold,
+  },
+  sectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontFamily: typography.displayBold,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  infoRowNoBorder: {
+    borderBottomWidth: 0,
+  },
+  infoLabel: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontFamily: typography.bodyBold,
+  },
+  infoValue: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    maxWidth: 150,
+    textAlign: 'right',
+    fontFamily: typography.bodyMedium,
+  },
+  feedbackText: {
+    fontSize: 13,
+    fontFamily: typography.bodyBold,
+  },
+  feedbackSuccess: {
+    color: colors.success,
+  },
+  feedbackError: {
+    color: colors.danger,
+  },
+  input: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 15,
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontFamily: typography.bodyMedium,
+  },
+  primaryButton: {
+    minHeight: 50,
+    backgroundColor: colors.primaryDeep,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.soft,
+  },
+  primaryButtonText: {
+    color: colors.textOnDark,
+    fontSize: 14,
+    fontFamily: typography.bodyBold,
+  },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  actionRowStatic: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    marginTop: spacing.xs,
+  },
+  actionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  actionText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontFamily: typography.bodyBold,
+  },
+  actionValue: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontFamily: typography.bodyMedium,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 54,
+    borderRadius: radii.pill,
+    backgroundColor: '#FFF4F2',
+    borderWidth: 1,
+    borderColor: '#F3D3CF',
+  },
+  logoutText: {
+    color: colors.danger,
+    fontSize: 14,
+    fontFamily: typography.bodyBold,
+  },
 });

@@ -9,6 +9,7 @@ interface ItemRecord {
   _id: unknown;
   householdId: string;
   name: string;
+  photoUri?: string;
   category: ItemCategory;
   storageSpace?: StorageSpace;
   status: string;
@@ -45,6 +46,7 @@ export async function GET() {
       id: String(item._id),
       householdId: item.householdId,
       name: item.name,
+      photoUri: item.photoUri,
       category: item.category,
       storageSpace: item.storageSpace,
       status: item.status,
@@ -90,6 +92,7 @@ export async function POST(request: NextRequest) {
   const item = await ItemModel.create({
     householdId: household.id,
     name: body.name.trim(),
+    photoUri: body.photoUri?.trim() || undefined,
     category: body.category,
     storageSpace: body.storageSpace,
     status: 'active',
@@ -105,6 +108,7 @@ export async function POST(request: NextRequest) {
       id: String(item._id),
       householdId: item.householdId,
       name: item.name,
+      photoUri: item.photoUri,
       category: item.category,
       storageSpace: item.storageSpace,
       status: item.status,
