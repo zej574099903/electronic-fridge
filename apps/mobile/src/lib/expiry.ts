@@ -20,6 +20,19 @@ export interface InventoryTask {
 
 export type InventoryNoticeGroupKey = 'urgent' | 'tomorrow' | 'this_week';
 
+export type ActivityType = 'intake' | 'eaten' | 'discarded';
+
+export interface ActivityLog {
+  id: string;
+  itemId: string;
+  type: ActivityType;
+  timestamp: string;
+  title: string;
+  photoUri?: string;
+}
+
+export type ActivityGroupKey = 'today' | 'yesterday' | 'older';
+
 function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -237,4 +250,75 @@ export function buildInventoryTasks(items: FridgeItem[]): InventoryTask[] {
       return toneRank[left.tone] - toneRank[right.tone];
     })
     .slice(0, 3);
+}
+
+/**
+ * 构建活动时间轴数据
+ */
+export function buildActivityTimeline(items: FridgeItem[]): ActivityLog[] {
+  const activities: ActivityLog[] = [];
+
+  items.forEach((item) => {
+    // 1. 入库事件 (Intake)
+    activities.push({
+      id: `${item.id}-intake`,
+      itemId: item.id,
+      type: 'intake',
+      timestamp: item.createdAt || new Date().toISOString(),
+      title: '成功收纳一件食材',
+      photoUri: item.photoUri,
+    });
+
+    // 2. 处理事件 (Eaten/Discarded)
+    if (item.status === 'eaten') {
+      activities.push({
+        id: `${item.id}-eaten`,
+        itemId: item.id,
+        type: 'eaten',
+        timestamp: item.updatedAt || new Date().toISOString(),
+        title: '已尽情享用该食材',
+        photoUri: item.photoUri,
+      });
+    } else if (item.status === 'discarded') {
+      activities.push({
+        id: `${item.id}-discarded`,
+        itemId: item.id,
+        type: 'discarded',
+        timestamp: item.updatedAt || new Date().toISOString(),
+        title: '已清理过期负担',
+        photoUri: item.photoUri,
+      });
+    }
+  });
+
+  // 按时间倒序排列 (最新的在前)
+  return activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 50); // 只保留最近50条
+}
+
+/**
+ * 对活动进行日期分组
+ */
+export function groupActivityTimeline(activities: ActivityLog[]) {
+  const groups: Array<{ key: ActivityGroupKey; title: string; activities: ActivityLog[] }> = [
+    { key: 'today', title: '今天', activities: [] },
+    { key: 'yesterday', title: '昨天', activities: [] },
+    { key: 'older', title: '更早以前', activities: [] },
+  ];
+
+  const today = startOfDay(new Date());
+  const yesterday = new Date(today.getTime() - 86400000);
+
+  activities.forEach((activity) => {
+    const actDate = startOfDay(new Date(activity.timestamp));
+
+    if (actDate.getTime() === today.getTime()) {
+      groups[0].activities.push(activity);
+    } else if (actDate.getTime() === yesterday.getTime()) {
+      groups[1].activities.push(activity);
+    } else {
+      groups[2].activities.push(activity);
+    }
+  });
+
+  return groups.filter((group) => group.activities.length > 0);
 }

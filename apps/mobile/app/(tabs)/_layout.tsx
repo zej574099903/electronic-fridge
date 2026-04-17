@@ -53,9 +53,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="notifications"
         options={{
-          title: '提醒',
+          title: '动态',
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name={focused ? 'notifications' : 'notifications-outline'} color={color} size={22} focused={focused} />
+            <TabIcon name={focused ? 'pulse' : 'pulse-outline'} color={color} size={22} focused={focused} />
           ),
         }}
       />

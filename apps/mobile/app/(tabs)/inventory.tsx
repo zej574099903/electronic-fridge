@@ -162,7 +162,7 @@ export default function InventoryTabScreen() {
                 <View style={styles.metricDivider} />
                 <OverviewMetric label="全部" value={currentItems.length} icon="cube" tint={colors.primary} />
                 <View style={styles.metricDivider} />
-                <OverviewMetric label="待补" value={undatedCount} icon="time" tint={colors.warning} />
+                <OverviewMetric label="待设日期" value={undatedCount} icon="time" tint={colors.warning} />
               </View>
             </BlurView>
           </View>
@@ -227,9 +227,9 @@ export default function InventoryTabScreen() {
                         <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
                       </View>
                       <View style={styles.itemTextContent}>
-                        <Text style={styles.itemName} numberOfLines={1}>{formatRemainingText(item)}</Text>
+                        <Text style={[styles.itemName, { color: toneColor }]} numberOfLines={1}>{formatRemainingText(item)}</Text>
                         <Text style={styles.itemSubtext}>
-                          过期日期: {item.expiresOn?.slice(0, 10) || '未设定'}
+                          过期日期: {item.expiresOn?.slice(0, 10) || '未设置日期'}
                         </Text>
                       </View>
                     </View>
@@ -546,14 +546,14 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   itemName: {
-    fontSize: 20,
+    fontSize: 22,
     fontFamily: typography.displayBold,
-    color: colors.textPrimary,
   },
   itemSubtext: {
     fontSize: 12,
     fontFamily: typography.bodySemibold,
-    opacity: 0.9,
+    color: colors.textMuted,
+    opacity: 0.7,
   },
   actionRow: {
     flexDirection: 'row',
